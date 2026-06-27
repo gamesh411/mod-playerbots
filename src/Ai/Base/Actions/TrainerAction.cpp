@@ -342,7 +342,12 @@ bool BisGearAction::Execute(Event event)
         return false;
     }
 
-    uint16 ilvl = static_cast<uint16>(sPlayerbotAIConfig.autoGearScoreLimit);
+    const bool isGSUnlimited = sPlayerbotAIConfig.autoGearScoreLimit == 0;
+    const uint16 minExistingBisTierIlvl = sBisListMgr->GetMinIlvl();
+    const uint16 maxExistingBisTierIlvl = sBisListMgr->GetMaxIlvl();
+
+    uint16 requestedIlvl =
+        isGSUnlimited ? maxExistingBisTierIlvl : static_cast<uint16>(sPlayerbotAIConfig.autoGearScoreLimit);
 
     // Optional explicit ilvl override: `/p autogear bis 55`.
     // Garbage or out-of-range args are hard-rejected: no autogear fallback, no gear change.
@@ -351,37 +356,41 @@ bool BisGearAction::Execute(Event event)
     {
         unsigned long parsed = 0;
         size_t pos = 0;
-        bool valid = false;
+        bool isValidNum = false;
         try
         {
             parsed = std::stoul(param, &pos);
-            valid = (parsed > 0 && pos == param.size() && parsed <= 0xFFFFu);
+            isValidNum = pos == param.size();
         }
         catch (...)
         {
-            valid = false;
+            isValidNum = false;
         }
 
-        if (!valid)
+        const bool isOutOfRange =
+            parsed < minExistingBisTierIlvl || parsed > maxExistingBisTierIlvl;
+        if (!isValidNum || isOutOfRange)
         {
             std::map<std::string, std::string> phs;
             phs["%param"] = param;
+            phs["%min"] = std::to_string(minExistingBisTierIlvl);
+            phs["%max"] = std::to_string(maxExistingBisTierIlvl);
             botAI->TellError(PlayerbotTextMgr::instance().GetBotTextOrDefault(
                 "bis_invalid_arg_error",
-                "Invalid BiS ilvl argument '%param'. Use a positive integer.", phs));
+                "Invalid BiS ilvl argument '%param'. Use a positive integer in range of [%min, %max]", phs));
             return false;
         }
-        if (parsed > static_cast<unsigned long>(sPlayerbotAIConfig.autoGearScoreLimit))
+
+        if (!isGSUnlimited && parsed > static_cast<unsigned long>(sPlayerbotAIConfig.autoGearScoreLimit))
         {
             std::map<std::string, std::string> phs;
             phs["%requested"] = std::to_string(parsed);
             phs["%limit"] = std::to_string(sPlayerbotAIConfig.autoGearScoreLimit);
             botAI->TellError(PlayerbotTextMgr::instance().GetBotTextOrDefault(
-                "bis_arg_above_limit_error",
-                "BiS ilvl %requested exceeds AutoGearScoreLimit %limit, refusing", phs));
+                "bis_arg_above_limit_error", "BiS ilvl %requested exceeds AutoGearScoreLimit %limit, refusing", phs));
             return false;
         }
-        ilvl = static_cast<uint16>(parsed);
+        requestedIlvl = static_cast<uint16>(parsed);
     }
     uint8 cls = bot->getClass();
     uint8 tab = AiFactory::GetPlayerSpecTab(bot);
@@ -393,34 +402,32 @@ bool BisGearAction::Execute(Event event)
     uint16 resolvedIlvl = 0;
     std::map<uint8, uint32> bisMap;
     if (cls == CLASS_DRUID && tab == DRUID_TAB_FERAL && PlayerbotAI::IsTank(bot))
-        bisMap = sBisListMgr->GetBisForNearest(ilvl, BIS_ILVL_FALLBACK_WINDOW, cls, BIS_TAB_DRUID_BEAR, faction,
-                                               &resolvedIlvl);
+        bisMap = sBisListMgr->GetBisForNearest(requestedIlvl, BIS_ILVL_FALLBACK_WINDOW, cls, BIS_TAB_DRUID_BEAR,
+                                               faction, &resolvedIlvl);
     if (bisMap.empty())
-        bisMap = sBisListMgr->GetBisForNearest(ilvl, BIS_ILVL_FALLBACK_WINDOW, cls, tab, faction, &resolvedIlvl);
+        bisMap =
+            sBisListMgr->GetBisForNearest(requestedIlvl, BIS_ILVL_FALLBACK_WINDOW, cls, tab, faction, &resolvedIlvl);
 
     // No rows within fallback window -> full autogear fallback at the effective ilvl.
     if (bisMap.empty())
     {
         std::map<std::string, std::string> phs;
-        phs["%ilvl"] = std::to_string(ilvl);
+        phs["%ilvl"] = std::to_string(requestedIlvl);
         botAI->TellMaster(PlayerbotTextMgr::instance().GetBotTextOrDefault(
-            "bis_no_rows_autogear_msg",
-            "No BiS at ilvl %ilvl, using Autogear %ilvl instead", phs));
-        return RunAutogearFallback(ilvl);
+            "bis_no_rows_autogear_msg", "No BiS at ilvl %ilvl, using Autogear %ilvl instead", phs));
+        return RunAutogearFallback(requestedIlvl);
     }
 
-    if (resolvedIlvl != ilvl)
+    if (resolvedIlvl != requestedIlvl)
     {
         std::map<std::string, std::string> phs;
-        phs["%requested"] = std::to_string(ilvl);
+        phs["%requested"] = std::to_string(requestedIlvl);
         phs["%resolved"] = std::to_string(resolvedIlvl);
         botAI->TellMaster(PlayerbotTextMgr::instance().GetBotTextOrDefault(
-            "bis_closest_match_msg",
-            "No BiS at ilvl %requested, using closest match at ilvl %resolved", phs));
+            "bis_closest_match_msg", "No BiS at ilvl %requested, using closest match at ilvl %resolved", phs));
     }
 
-    botAI->TellMaster(PlayerbotTextMgr::instance().GetBotTextOrDefault(
-        "bis_applying_msg", "Applying BiS gear", {}));
+    botAI->TellMaster(PlayerbotTextMgr::instance().GetBotTextOrDefault("bis_applying_msg", "Applying BiS gear", {}));
 
     // 1. Wipe everything currently equipped so autogear starts from a clean slate.
     //    Old items linger in inventory otherwise and autogear leaves slots empty on bag conflicts.
@@ -459,9 +466,7 @@ bool BisGearAction::Execute(Event event)
     //    Uncovered slots will keep the autogear pick; BiS overwrites the rest below.
     if (sPlayerbotAIConfig.autoGearCommand)
     {
-        uint32 fillGs = ilvl == 0
-                            ? 0
-                            : PlayerbotFactory::CalcMixedGearScore(ilvl, sPlayerbotAIConfig.autoGearQualityLimit);
+        uint32 fillGs = PlayerbotFactory::CalcMixedGearScore(requestedIlvl, sPlayerbotAIConfig.autoGearQualityLimit);
         PlayerbotFactory fillFactory(bot, bot->GetLevel(), sPlayerbotAIConfig.autoGearQualityLimit, fillGs);
         fillFactory.InitEquipment(false, sPlayerbotAIConfig.twoRoundsGearInit);
     }

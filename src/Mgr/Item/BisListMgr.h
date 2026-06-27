@@ -22,6 +22,9 @@ public:
 
     void LoadAll();
 
+    uint16 GetMinIlvl() const;
+    uint16 GetMaxIlvl() const;
+
     // faction: 1=Alliance, 2=Horde. Faction-specific rows override faction=0 (Both).
     // Returns slot -> itemId for the matching auto_gear_score_limit tier. Empty map = no data.
     std::map<uint8, uint32> GetBisFor(uint16 autoGearScoreLimit, uint8 cls, uint8 tab, uint8 faction) const;
