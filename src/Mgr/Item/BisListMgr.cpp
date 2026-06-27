@@ -42,6 +42,20 @@ void BisListMgr::LoadAll()
              count, static_cast<uint32>(_bis.size()));
 }
 
+uint16 BisListMgr::GetMinIlvl() const
+{
+    if (_bis.empty())
+        return 0;
+    return _bis.begin()->first;
+}
+
+uint16 BisListMgr::GetMaxIlvl() const
+{
+    if (_bis.empty())
+        return 0;
+    return _bis.rbegin()->first;
+}
+
 std::map<uint8, uint32> BisListMgr::GetBisFor(uint16 autoGearScoreLimit, uint8 cls, uint8 tab, uint8 faction) const
 {
     auto ilvlIt = _bis.find(autoGearScoreLimit);
