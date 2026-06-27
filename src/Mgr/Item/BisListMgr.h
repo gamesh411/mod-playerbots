@@ -11,6 +11,9 @@
 
 #include <map>
 
+class ItemTemplate;
+class Player;
+
 class BisListMgr
 {
 public:
@@ -24,6 +27,12 @@ public:
 
     uint16 GetMinIlvl() const;
     uint16 GetMaxIlvl() const;
+
+    // Grants required reputation when needed, then checks CanUseItem and CanEquipNewItem.
+    bool CanBotEquipBisItem(Player* bot, uint8 slot, ItemTemplate const* proto) const;
+
+    // Highest BiS tier where every item for cls/tab/faction passes CanBotEquipBisItem.
+    uint16 GetMaxEquipableIlvl(Player* bot, uint8 cls, uint8 tab, uint8 faction) const;
 
     // faction: 1=Alliance, 2=Horde. Faction-specific rows override faction=0 (Both).
     // Returns slot -> itemId for the matching auto_gear_score_limit tier. Empty map = no data.
