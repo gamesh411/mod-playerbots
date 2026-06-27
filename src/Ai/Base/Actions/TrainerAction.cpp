@@ -6,6 +6,8 @@
 
 #include "TrainerAction.h"
 
+#include <algorithm>
+
 #include "AiFactory.h"
 #include "BisListMgr.h"
 #include "BudgetValues.h"
@@ -13,7 +15,6 @@
 #include "PlayerbotFactory.h"
 #include "PlayerbotTextMgr.h"
 #include "Playerbots.h"
-#include "ReputationMgr.h"
 #include "Trainer.h"
 
 bool TrainerAction::Execute(Event event)
@@ -346,8 +347,20 @@ bool BisGearAction::Execute(Event event)
     const uint16 minExistingBisTierIlvl = sBisListMgr->GetMinIlvl();
     const uint16 maxExistingBisTierIlvl = sBisListMgr->GetMaxIlvl();
 
-    uint16 requestedIlvl =
+    uint8 cls = bot->getClass();
+    uint8 tab = AiFactory::GetPlayerSpecTab(bot);
+    uint8 faction = bot->GetTeamId() == TEAM_ALLIANCE ? 1 : 2;
+
+    // Druid Bear (Feral Tank) shares tab 1 with Cat. Use sentinel tab 10 when tank strategy active.
+    constexpr uint8 BIS_TAB_DRUID_BEAR = 10;
+    uint8 bisTab = tab;
+    if (cls == CLASS_DRUID && tab == DRUID_TAB_FERAL && PlayerbotAI::IsTank(bot))
+        bisTab = BIS_TAB_DRUID_BEAR;
+
+    uint16 const maxEquipableIlvl = sBisListMgr->GetMaxEquipableIlvl(bot, cls, bisTab, faction);
+    uint16 const configIlvlCap =
         isGSUnlimited ? maxExistingBisTierIlvl : static_cast<uint16>(sPlayerbotAIConfig.autoGearScoreLimit);
+    uint16 requestedIlvl = std::min(maxEquipableIlvl, configIlvlCap);
 
     // Optional explicit ilvl override: `/p autogear bis 55`.
     // Garbage or out-of-range args are hard-rejected: no autogear fallback, no gear change.
@@ -392,19 +405,12 @@ bool BisGearAction::Execute(Event event)
         }
         requestedIlvl = static_cast<uint16>(parsed);
     }
-    uint8 cls = bot->getClass();
-    uint8 tab = AiFactory::GetPlayerSpecTab(bot);
-    uint8 faction = bot->GetTeamId() == TEAM_ALLIANCE ? 1 : 2;
 
-    // Druid Bear (Feral Tank) shares tab 1 with Cat. Use sentinel tab 10 when tank strategy active.
-    constexpr uint8 BIS_TAB_DRUID_BEAR = 10;
     constexpr uint16 BIS_ILVL_FALLBACK_WINDOW = 20;
     uint16 resolvedIlvl = 0;
-    std::map<uint8, uint32> bisMap;
-    if (cls == CLASS_DRUID && tab == DRUID_TAB_FERAL && PlayerbotAI::IsTank(bot))
-        bisMap = sBisListMgr->GetBisForNearest(requestedIlvl, BIS_ILVL_FALLBACK_WINDOW, cls, BIS_TAB_DRUID_BEAR,
-                                               faction, &resolvedIlvl);
-    if (bisMap.empty())
+    std::map<uint8, uint32> bisMap =
+        sBisListMgr->GetBisForNearest(requestedIlvl, BIS_ILVL_FALLBACK_WINDOW, cls, bisTab, faction, &resolvedIlvl);
+    if (bisMap.empty() && bisTab != tab)
         bisMap =
             sBisListMgr->GetBisForNearest(requestedIlvl, BIS_ILVL_FALLBACK_WINDOW, cls, tab, faction, &resolvedIlvl);
 
@@ -485,33 +491,17 @@ bool BisGearAction::Execute(Event event)
     }
 
     // 3. Apply BiS: only touch slots where the bot can actually equip the BiS item.
-    //    If item requires reputation, grant the required rank first. If CanUseItem still
-    //    fails (class/race/skill/level), keep autogear's pick for that slot.
+    //    CanBotEquipBisItem grants reputation when needed, then checks CanUseItem and
+    //    CanEquipNewItem; slots that still fail keep autogear's pick.
     for (auto const& kv : bisMap)
     {
         ItemTemplate const* proto = sObjectMgr->GetItemTemplate(kv.second);
         if (!proto)
             continue;
 
-        // Grant required reputation rank if the item gates on it.
-        if (proto->RequiredReputationFaction && proto->RequiredReputationRank > 0)
-        {
-            if (FactionEntry const* fac = sFactionStore.LookupEntry(proto->RequiredReputationFaction))
-            {
-                ReputationRank requiredRank = static_cast<ReputationRank>(proto->RequiredReputationRank);
-                if (bot->GetReputationRank(proto->RequiredReputationFaction) < requiredRank)
-                {
-                    int32 standing = ReputationMgr::ReputationRankToStanding(
-                                         static_cast<ReputationRank>(requiredRank - 1)) + 1;
-                    bot->GetReputationMgr().SetReputation(fac, standing);
-                }
-            }
-        }
-
-        if (bot->CanUseItem(proto) != EQUIP_ERR_OK)
-            continue;
-
         uint8 slot = kv.first;
+        if (!sBisListMgr->CanBotEquipBisItem(bot, slot, proto))
+            continue;
         if (bot->GetItemByPos(INVENTORY_SLOT_BAG_0, slot))
             bot->DestroyItem(INVENTORY_SLOT_BAG_0, slot, true);
 
