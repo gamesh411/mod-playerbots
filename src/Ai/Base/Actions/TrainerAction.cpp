@@ -15,7 +15,71 @@
 #include "PlayerbotFactory.h"
 #include "PlayerbotTextMgr.h"
 #include "Playerbots.h"
+#include "ReputationMgr.h"
 #include "Trainer.h"
+
+namespace
+{
+void EnsureItemReputation(Player* bot, ItemTemplate const* proto)
+{
+    if (!proto->RequiredReputationFaction || !proto->RequiredReputationRank)
+        return;
+
+    if (FactionEntry const* fac = sFactionStore.LookupEntry(proto->RequiredReputationFaction))
+    {
+        ReputationRank requiredRank = static_cast<ReputationRank>(proto->RequiredReputationRank);
+        if (bot->GetReputationRank(proto->RequiredReputationFaction) < requiredRank)
+        {
+            int32 standing = ReputationMgr::ReputationRankToStanding(
+                                 static_cast<ReputationRank>(requiredRank - 1)) + 1;
+            bot->GetReputationMgr().SetReputation(fac, standing);
+        }
+    }
+}
+
+bool CanBotUseBisItem(Player* bot, ItemTemplate const* proto)
+{
+    return proto && bot->CanUseItem(proto) == EQUIP_ERR_OK;
+}
+
+uint16 GetMaxEquipableBisIlvl(Player* bot, uint8 cls, uint8 tab, uint8 faction)
+{
+    uint16 const minIlvl = sBisListMgr->GetMinIlvl();
+    uint16 const maxIlvl = sBisListMgr->GetMaxIlvl();
+    if (!maxIlvl)
+        return 0;
+
+    for (int32 ilvl = maxIlvl; ilvl >= static_cast<int32>(minIlvl); --ilvl)
+    {
+        std::map<uint8, uint32> const bisMap = sBisListMgr->GetBisFor(static_cast<uint16>(ilvl), cls, tab, faction);
+        if (bisMap.empty())
+            continue;
+
+        bool allUsable = true;
+        for (auto const& kv : bisMap)
+        {
+            ItemTemplate const* proto = sObjectMgr->GetItemTemplate(kv.second);
+            if (!proto)
+            {
+                allUsable = false;
+                break;
+            }
+
+            EnsureItemReputation(bot, proto);
+            if (!CanBotUseBisItem(bot, proto))
+            {
+                allUsable = false;
+                break;
+            }
+        }
+
+        if (allUsable)
+            return static_cast<uint16>(ilvl);
+    }
+
+    return 0;
+}
+} // namespace
 
 bool TrainerAction::Execute(Event event)
 {
@@ -357,7 +421,7 @@ bool BisGearAction::Execute(Event event)
     if (cls == CLASS_DRUID && tab == DRUID_TAB_FERAL && PlayerbotAI::IsTank(bot))
         bisTab = BIS_TAB_DRUID_BEAR;
 
-    uint16 const maxEquipableIlvl = sBisListMgr->GetMaxEquipableIlvl(bot, cls, bisTab, faction);
+    uint16 const maxEquipableIlvl = GetMaxEquipableBisIlvl(bot, cls, bisTab, faction);
     uint16 const configIlvlCap =
         isGSUnlimited ? maxExistingBisTierIlvl : static_cast<uint16>(sPlayerbotAIConfig.autoGearScoreLimit);
     uint16 requestedIlvl = std::min(maxEquipableIlvl, configIlvlCap);
@@ -491,17 +555,20 @@ bool BisGearAction::Execute(Event event)
     }
 
     // 3. Apply BiS: only touch slots where the bot can actually equip the BiS item.
-    //    CanBotEquipBisItem grants reputation when needed, then checks CanUseItem and
-    //    CanEquipNewItem; slots that still fail keep autogear's pick.
+    //    If item requires reputation, grant the required rank first. If CanUseItem still
+    //    fails (class/race/skill/level), keep autogear's pick for that slot.
     for (auto const& kv : bisMap)
     {
         ItemTemplate const* proto = sObjectMgr->GetItemTemplate(kv.second);
         if (!proto)
             continue;
 
-        uint8 slot = kv.first;
-        if (!sBisListMgr->CanBotEquipBisItem(bot, slot, proto))
+        EnsureItemReputation(bot, proto);
+
+        if (bot->CanUseItem(proto) != EQUIP_ERR_OK)
             continue;
+
+        uint8 slot = kv.first;
         if (bot->GetItemByPos(INVENTORY_SLOT_BAG_0, slot))
             bot->DestroyItem(INVENTORY_SLOT_BAG_0, slot, true);
 
