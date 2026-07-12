@@ -18,6 +18,12 @@
 #include "ReputationMgr.h"
 #include "Trainer.h"
 
+
+#define DEBUG_BOT_TELL(botAi, message) ((botAi)->TellMaster(message))
+#define DEBUG_BOT_TELL_VAR_VALUE(botAi, varName)                                                                      \
+    DEBUG_BOT_TELL(                                                                                                   \
+        (botAi), PlayerbotTextMgr::instance().GetBotTextOrDefault("debug_bot_tell_var_" #varName, #varName " %value", \
+                                                                  {{"%value", std::to_string(varName)}}))
 namespace
 {
 void EnsureItemReputation(Player* bot, ItemTemplate const* proto)
@@ -37,48 +43,6 @@ void EnsureItemReputation(Player* bot, ItemTemplate const* proto)
     }
 }
 
-bool CanBotUseBisItem(Player* bot, ItemTemplate const* proto)
-{
-    return proto && bot->CanUseItem(proto) == EQUIP_ERR_OK;
-}
-
-uint16 GetMaxEquipableBisIlvl(Player* bot, uint8 cls, uint8 tab, uint8 faction)
-{
-    uint16 const minIlvl = sBisListMgr->GetMinIlvl();
-    uint16 const maxIlvl = sBisListMgr->GetMaxIlvl();
-    if (!maxIlvl)
-        return 0;
-
-    for (int32 ilvl = maxIlvl; ilvl >= static_cast<int32>(minIlvl); --ilvl)
-    {
-        std::map<uint8, uint32> const bisMap = sBisListMgr->GetBisFor(static_cast<uint16>(ilvl), cls, tab, faction);
-        if (bisMap.empty())
-            continue;
-
-        bool allUsable = true;
-        for (auto const& kv : bisMap)
-        {
-            ItemTemplate const* proto = sObjectMgr->GetItemTemplate(kv.second);
-            if (!proto)
-            {
-                allUsable = false;
-                break;
-            }
-
-            EnsureItemReputation(bot, proto);
-            if (!CanBotUseBisItem(bot, proto))
-            {
-                allUsable = false;
-                break;
-            }
-        }
-
-        if (allUsable)
-            return static_cast<uint16>(ilvl);
-    }
-
-    return 0;
-}
 } // namespace
 
 bool TrainerAction::Execute(Event event)
@@ -409,22 +373,12 @@ bool BisGearAction::Execute(Event event)
 
     const bool isGSUnlimited = sPlayerbotAIConfig.autoGearScoreLimit == 0;
     const uint16 minExistingBisTierIlvl = sBisListMgr->GetMinIlvl();
+    DEBUG_BOT_TELL_VAR_VALUE(botAI, minExistingBisTierIlvl);
     const uint16 maxExistingBisTierIlvl = sBisListMgr->GetMaxIlvl();
-
-    uint8 cls = bot->getClass();
-    uint8 tab = AiFactory::GetPlayerSpecTab(bot);
-    uint8 faction = bot->GetTeamId() == TEAM_ALLIANCE ? 1 : 2;
-
-    // Druid Bear (Feral Tank) shares tab 1 with Cat. Use sentinel tab 10 when tank strategy active.
-    constexpr uint8 BIS_TAB_DRUID_BEAR = 10;
-    uint8 bisTab = tab;
-    if (cls == CLASS_DRUID && tab == DRUID_TAB_FERAL && PlayerbotAI::IsTank(bot))
-        bisTab = BIS_TAB_DRUID_BEAR;
-
-    uint16 const maxEquipableIlvl = GetMaxEquipableBisIlvl(bot, cls, bisTab, faction);
-    uint16 const configIlvlCap =
+    DEBUG_BOT_TELL_VAR_VALUE(botAI, maxExistingBisTierIlvl);
+    uint16 requestedIlvl =
         isGSUnlimited ? maxExistingBisTierIlvl : static_cast<uint16>(sPlayerbotAIConfig.autoGearScoreLimit);
-    uint16 requestedIlvl = std::min(maxEquipableIlvl, configIlvlCap);
+    DEBUG_BOT_TELL_VAR_VALUE(botAI, requestedIlvl);
 
     // Optional explicit ilvl override: `/p autogear bis 55`.
     // Garbage or out-of-range args are hard-rejected: no autogear fallback, no gear change.
@@ -444,15 +398,15 @@ bool BisGearAction::Execute(Event event)
             isValidNum = false;
         }
 
-        const bool isOutOfRange =
-            parsed < minExistingBisTierIlvl || parsed > maxExistingBisTierIlvl;
+        const bool isOutOfRange = parsed < minExistingBisTierIlvl || parsed > maxExistingBisTierIlvl;
         if (!isValidNum || isOutOfRange)
         {
             std::map<std::string, std::string> phs;
             phs["%param"] = param;
             phs["%min"] = std::to_string(minExistingBisTierIlvl);
             phs["%max"] = std::to_string(maxExistingBisTierIlvl);
-            botAI->TellError(PlayerbotTextMgr::instance().GetBotTextOrDefault(
+            botAI->TellError(PlayerbotTextMgr::instance().GetBotTextOrDefault(std::string name, std::string defaultText, std::map<std::string, std::string> placeholders)
+            botAI->TellError(PlayerbotTextMgr::instance().
                 "bis_invalid_arg_error",
                 "Invalid BiS ilvl argument '%param'. Use a positive integer in range of [%min, %max]", phs));
             return false;
@@ -470,13 +424,28 @@ bool BisGearAction::Execute(Event event)
         requestedIlvl = static_cast<uint16>(parsed);
     }
 
-    constexpr uint16 BIS_ILVL_FALLBACK_WINDOW = 20;
+    DEBUG_BOT_TELL_VAR_VALUE(botAI, requestedIlvl);
+
+    const uint16 BIS_ILVL_FALLBACK_WINDOW = !param.empty() ? 20 : requestedIlvl;
+
+    uint8 cls = bot->getClass();
+    uint8 tab = AiFactory::GetPlayerSpecTab(bot);
+    uint8 faction = bot->GetTeamId() == TEAM_ALLIANCE ? 1 : 2;
+
+    // Druid Bear (Feral Tank) shares tab 1 with Cat. Use sentinel tab 10 when tank strategy active.
+    constexpr uint8 BIS_TAB_DRUID_BEAR = 10;
+    uint8 bisTab = tab;
+    if (cls == CLASS_DRUID && tab == DRUID_TAB_FERAL && PlayerbotAI::IsTank(bot))
+        bisTab = BIS_TAB_DRUID_BEAR;
+
     uint16 resolvedIlvl = 0;
     std::map<uint8, uint32> bisMap =
         sBisListMgr->GetBisForNearest(requestedIlvl, BIS_ILVL_FALLBACK_WINDOW, cls, bisTab, faction, &resolvedIlvl);
     if (bisMap.empty() && bisTab != tab)
         bisMap =
             sBisListMgr->GetBisForNearest(requestedIlvl, BIS_ILVL_FALLBACK_WINDOW, cls, tab, faction, &resolvedIlvl);
+
+    DEBUG_BOT_TELL_VAR_VALUE(botAI, resolvedIlvl);
 
     // No rows within fallback window -> full autogear fallback at the effective ilvl.
     if (bisMap.empty())
