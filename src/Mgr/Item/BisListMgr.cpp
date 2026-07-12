@@ -7,14 +7,11 @@
 #include "BisListMgr.h"
 
 #include "DatabaseEnv.h"
-#include "DBCStores.h"
 #include "Field.h"
-#include "ItemTemplate.h"
 #include "Log.h"
-#include "ObjectMgr.h"
-#include "Player.h"
 #include "QueryResult.h"
-#include "ReputationMgr.h"
+
+#include <ranges>
 
 void BisListMgr::LoadAll()
 {
@@ -61,61 +58,6 @@ uint16 BisListMgr::GetMaxIlvl() const
     return _bis.rbegin()->first;
 }
 
-bool BisListMgr::CanBotEquipBisItem(Player* bot, uint8 slot, ItemTemplate const* proto) const
-{
-    if (!bot || !proto)
-        return false;
-
-    if (proto->RequiredReputationFaction && proto->RequiredReputationRank > 0)
-    {
-        if (FactionEntry const* fac = sFactionStore.LookupEntry(proto->RequiredReputationFaction))
-        {
-            ReputationRank requiredRank = static_cast<ReputationRank>(proto->RequiredReputationRank);
-            if (bot->GetReputationRank(proto->RequiredReputationFaction) < requiredRank)
-            {
-                int32 standing = ReputationMgr::ReputationRankToStanding(
-                                     static_cast<ReputationRank>(requiredRank - 1)) + 1;
-                bot->GetReputationMgr().SetReputation(fac, standing);
-            }
-        }
-    }
-
-    if (bot->CanUseItem(proto) != EQUIP_ERR_OK)
-        return false;
-
-    uint16 dest = 0;
-    return bot->CanEquipNewItem(slot, dest, proto->ItemId, false) == EQUIP_ERR_OK;
-}
-
-uint16 BisListMgr::GetMaxEquipableIlvl(Player* bot, uint8 cls, uint8 tab, uint8 faction) const
-{
-    if (!bot || _bis.empty())
-        return 0;
-
-    for (auto it = _bis.rbegin(); it != _bis.rend(); ++it)
-    {
-        std::map<uint8, uint32> const bisMap = GetBisFor(it->first, cls, tab, faction);
-        if (bisMap.empty())
-            continue;
-
-        bool allEquipable = true;
-        for (auto const& kv : bisMap)
-        {
-            ItemTemplate const* proto = sObjectMgr->GetItemTemplate(kv.second);
-            if (!CanBotEquipBisItem(bot, kv.first, proto))
-            {
-                allEquipable = false;
-                break;
-            }
-        }
-
-        if (allEquipable)
-            return it->first;
-    }
-
-    return 0;
-}
-
 std::map<uint8, uint32> BisListMgr::GetBisFor(uint16 autoGearScoreLimit, uint8 cls, uint8 tab, uint8 faction) const
 {
     auto ilvlIt = _bis.find(autoGearScoreLimit);
@@ -146,22 +88,26 @@ std::map<uint8, uint32> BisListMgr::GetBisFor(uint16 autoGearScoreLimit, uint8 c
 }
 
 std::map<uint8, uint32> BisListMgr::GetBisForNearest(uint16 requestedIlvl, uint16 maxDrop, uint8 cls, uint8 tab,
-                                                    uint8 faction, uint16* outResolved) const
+                                                     uint8 faction, uint16* outResolved) const
 {
     uint16 floor = requestedIlvl > maxDrop ? requestedIlvl - maxDrop : 1;
-    for (uint16 try_ilvl = requestedIlvl; try_ilvl >= floor; --try_ilvl)
+    for (uint16 iLvl : _bis | std::views::keys | std::views::reverse)
     {
-        auto result = GetBisFor(try_ilvl, cls, tab, faction);
+        if (iLvl > requestedIlvl)
+        {
+            continue;
+        }
+        if (iLvl < floor)
+        {
+            break;
+        }
+        auto result = GetBisFor(iLvl, cls, tab, faction);
         if (!result.empty())
         {
             if (outResolved)
-                *outResolved = try_ilvl;
+                *outResolved = iLvl;
             return result;
         }
-        if (try_ilvl == 0)
-            break;
     }
-    if (outResolved)
-        *outResolved = 0;
     return {};
 }
