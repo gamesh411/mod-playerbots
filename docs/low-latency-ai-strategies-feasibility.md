@@ -2,7 +2,25 @@
 
 This document evaluates whether, how, and where modern AI techniques can improve bot decision-making in `mod-playerbots`, with emphasis on **latency**, **server scale**, and **fit with the existing Strategy / Trigger / Action / Value engine**.
 
-It is an analysis only — no implementation is proposed as committed work beyond this document.
+## Implementation status (PvP-first)
+
+The following are now wired into the combat engine (heuristic scorers; ONNX-ready feature vector):
+
+| Option | Strategy name | Scope | Config |
+|---|---|---|---|
+| **B** Hybrid relevance | `hybrid relevance` | **Every bot** combat engine | `AiPlayerbot.HybridRelevanceEnabled` (default 1) |
+| **C** PvP policy | `pvp policy` | **BG + arena only** | `AiPlayerbot.PvpPolicyEnabled` (default 1) |
+
+Code:
+
+- `src/Ai/Ml/CombatDecisionFeatures.*` — shared feature vector Value
+- `src/Ai/Ml/HybridRelevanceStrategy.*` — Option B multiplier
+- `src/Ai/Ml/PvpPolicyStrategy.*` — Option C multiplier + PvP triggers
+- Factory wiring in `src/Bot/Factory/AiFactory.cpp`
+
+Rule tweaks: arena engages `attack enemy player` on `enemy player near`; world `pvp` strategy relevance raised slightly.
+
+Toggle off either system via `playerbots.conf` if needed for A/B testing.
 
 ---
 

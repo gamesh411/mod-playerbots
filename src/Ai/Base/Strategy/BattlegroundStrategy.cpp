@@ -84,4 +84,8 @@ void ArenaStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
 {
     triggers.push_back(
         new TriggerNode("no possible targets", { NextAction("arena tactics", ACTION_BG)}));
+
+    // Prefer engaging enemy players quickly once the gate opens / fight starts.
+    triggers.push_back(
+        new TriggerNode("enemy player near", { NextAction("attack enemy player", ACTION_HIGH + 9.0f) }));
 }

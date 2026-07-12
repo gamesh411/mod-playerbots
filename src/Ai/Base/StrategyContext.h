@@ -53,12 +53,16 @@
 #include "UsePotionsStrategy.h"
 #include "WaitForAttackStrategy.h"
 #include "WorldPacketHandlerStrategy.h"
+#include "HybridRelevanceStrategy.h"
+#include "PvpPolicyStrategy.h"
 
 class StrategyContext : public NamedObjectContext<Strategy>
 {
 public:
     StrategyContext()
     {
+        creators["hybrid relevance"] = &StrategyContext::hybrid_relevance;
+        creators["pvp policy"] = &StrategyContext::pvp_policy;
         creators["racials"] = &StrategyContext::racials;
         creators["loot"] = &StrategyContext::loot;
         creators["gather"] = &StrategyContext::gather;
@@ -132,6 +136,8 @@ public:
     }
 
 private:
+    static Strategy* hybrid_relevance(PlayerbotAI* botAI) { return new HybridRelevanceStrategy(botAI); }
+    static Strategy* pvp_policy(PlayerbotAI* botAI) { return new PvpPolicyStrategy(botAI); }
     static Strategy* behind(PlayerbotAI* botAI) { return new SetBehindCombatStrategy(botAI); }
     static Strategy* ranged(PlayerbotAI* botAI) { return new RangedCombatStrategy(botAI); }
     static Strategy* close(PlayerbotAI* botAI) { return new MeleeCombatStrategy(botAI); }

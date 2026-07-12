@@ -93,6 +93,7 @@
 #include "TradeValues.h"
 #include "Value.h"
 #include "WaitForAttackTimeValue.h"
+#include "CombatDecisionFeatures.h"
 
 class PlayerbotAI;
 
@@ -101,6 +102,7 @@ class ValueContext : public NamedObjectContext<UntypedValue>
 public:
     ValueContext()
     {
+        creators["combat decision features"] = &ValueContext::combat_decision_features;
         creators["active spell"] = &ValueContext::active_spell;
         creators["craft"] = &ValueContext::craft;
         creators["collision"] = &ValueContext::collision;
@@ -466,6 +468,7 @@ private:
     static UntypedValue* dps_target(PlayerbotAI* botAI) { return new DpsTargetValue(botAI); }
     static UntypedValue* dps_aoe_target(PlayerbotAI* botAI) { return new DpsAoeTargetValue(botAI); }
     static UntypedValue* least_hp_target(PlayerbotAI* botAI) { return new LeastHpTargetValue(botAI); }
+    static UntypedValue* combat_decision_features(PlayerbotAI* botAI) { return new CombatDecisionFeaturesValue(botAI); }
     static UntypedValue* enemy_player_target(PlayerbotAI* botAI) { return new EnemyPlayerValue(botAI); }
     static UntypedValue* cc_target(PlayerbotAI* botAI) { return new CcTargetValue(botAI); }
     static UntypedValue* current_cc_target(PlayerbotAI* botAI) { return new CurrentCcTargetValue(botAI); }
