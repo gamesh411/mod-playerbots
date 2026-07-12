@@ -444,6 +444,9 @@ bool PlayerbotAIConfig::Initialize()
     commandServerPort = sConfigMgr->GetOption<int32>("AiPlayerbot.CommandServerPort", 8888);
     perfMonEnabled = sConfigMgr->GetOption<bool>("AiPlayerbot.PerfMonEnabled", false);
 
+    hybridRelevanceEnabled = sConfigMgr->GetOption<bool>("AiPlayerbot.HybridRelevanceEnabled", true);
+    pvpPolicyEnabled = sConfigMgr->GetOption<bool>("AiPlayerbot.PvpPolicyEnabled", true);
+
     useGroundMountAtMinLevel = sConfigMgr->GetOption<int32>("AiPlayerbot.UseGroundMountAtMinLevel", 20);
     useFastGroundMountAtMinLevel = sConfigMgr->GetOption<int32>("AiPlayerbot.UseFastGroundMountAtMinLevel", 40);
     useFlyMountAtMinLevel = sConfigMgr->GetOption<int32>("AiPlayerbot.UseFlyMountAtMinLevel", 60);

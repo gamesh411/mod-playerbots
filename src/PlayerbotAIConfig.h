@@ -336,6 +336,12 @@ public:
 
     uint32 commandServerPort;
     bool perfMonEnabled;
+
+    // Hybrid relevance (Option B) — action ranking for all bots
+    bool hybridRelevanceEnabled;
+    // PvP policy (Option C) — BG/arena micro-policy
+    bool pvpPolicyEnabled;
+
     bool summonWhenGroup;
     ShowHideCosmetic randomBotShowHelmet;
     ShowHideCosmetic randomBotShowCloak;

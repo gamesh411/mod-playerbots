@@ -2188,6 +2188,20 @@ AiPlayerbot.TellWhenAvoidAoe = 0
 AiPlayerbot.PerfMonEnabled = 0
 
 #
+# LOW-LATENCY AI STRATEGIES (hybrid relevance + PvP policy)
+#
+# Option B: hybrid relevance scorer for ALL bots (combat engine).
+# Budgeted heuristic ranking of legal actions (interrupts, healer focus, defensives, heals).
+# Also improves PvE when enemies cast heals or party members are low.
+# Default: 1 (enabled)
+AiPlayerbot.HybridRelevanceEnabled = 1
+
+# Option C: PvP micro-policy for battleground and arena bots only.
+# Stronger interrupt / healer-CC / flag / player-target bias. Not applied to world grind bots.
+# Default: 1 (enabled)
+AiPlayerbot.PvpPolicyEnabled = 1
+
+#
 #
 ####################################################################################################
 

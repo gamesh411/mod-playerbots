@@ -288,6 +288,10 @@ void AiFactory::AddDefaultCombatStrategies(Player* player, PlayerbotAI* const fa
     if (!player->InBattleground())
         engine->addStrategiesNoInit("racials", "chat", "default", "cast time", "potions", "duel", "boost", nullptr);
 
+    // Option B: hybrid relevance ranking for every bot (PvP-focused heuristics also help PvE interrupts/heals).
+    if (sPlayerbotAIConfig.hybridRelevanceEnabled)
+        engine->addStrategy("hybrid relevance", false);
+
     if (sPlayerbotAIConfig.autoAvoidAoe && facade->HasRealPlayerMaster())
         engine->addStrategy("avoid aoe", false);
 
@@ -487,6 +491,10 @@ void AiFactory::AddDefaultCombatStrategies(Player* player, PlayerbotAI* const fa
         }
         else
             engine->addStrategiesNoInit("boost", "racials", "chat", "default", "aoe", "potions", "cast time", "dps assist", nullptr);
+
+        // Option C: scoped PvP micro-policy for battleground and arena bots only.
+        if (sPlayerbotAIConfig.pvpPolicyEnabled)
+            engine->addStrategy("pvp policy", false);
 
         engine->removeStrategy("custom::say", false);
         engine->removeStrategy("flee", false);
