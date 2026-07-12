@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <cmath>
 
+#include "Action.h"
 #include "HeuristicScores.h"
 #include "PlayerbotAIConfig.h"
 
