@@ -7,8 +7,12 @@
 #include "Engine.h"
 
 #include "Action.h"
+#include "CombatDecisionFeatures.h"
 #include "Event.h"
+#include "HeuristicScores.h"
+#include "MlDecisionLogger.h"
 #include "PerfMonitor.h"
+#include "PlayerbotAIConfig.h"
 #include "Playerbots.h"
 #include "Queue.h"
 #include "Strategy.h"
@@ -215,6 +219,17 @@ bool Engine::DoNextAction(Unit* /*unit*/, uint32 /*depth*/, bool minimal)
                 if (actionExecuted)
                 {
                     LogAction("A:%s - OK", action->getName().c_str());
+                    if (sPlayerbotAIConfig.mlLoggingEnabled)
+                    {
+                        Value<CombatFeatureVector>* featureValue =
+                            aiObjectContext->GetValue<CombatFeatureVector>("combat decision features");
+                        if (featureValue)
+                        {
+                            CombatFeatureVector const features = featureValue->Get();
+                            float heuristic = HeuristicScores::Hybrid(botAI, action, features);
+                            sMlDecisionLogger.OnActionExecuted(botAI, action->getName(), heuristic, relevance);
+                        }
+                    }
                     MultiplyAndPush(actionNode->getContinuers(), relevance, false, event, "cont");
                     lastRelevance = relevance;
                     delete actionNode;  // Safe memory management

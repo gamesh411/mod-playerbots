@@ -342,6 +342,16 @@ public:
     // PvP policy (Option C) — BG/arena micro-policy
     bool pvpPolicyEnabled;
 
+    // Offline learning / MLP inference
+    bool mlLoggingEnabled;
+    bool mlLogAllBots;
+    std::string mlLogFile;
+    uint32 mlRewardDelayMs;
+    float mlHybridAlpha;   // 0 = heuristic only, 1 = model only
+    float mlPvpAlpha;
+    std::string mlModelPathHybrid;
+    std::string mlModelPathPvp;
+
     bool summonWhenGroup;
     ShowHideCosmetic randomBotShowHelmet;
     ShowHideCosmetic randomBotShowCloak;
