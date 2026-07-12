@@ -7,6 +7,7 @@
 #include <iostream>
 #include "BisListMgr.h"
 #include "Config.h"
+#include "MlScorer.h"
 #include "NewRpgInfo.h"
 #include "PlayerbotDungeonRepository.h"
 #include "PlayerbotFactory.h"
@@ -442,6 +443,18 @@ bool PlayerbotAIConfig::Initialize()
 
     hybridRelevanceEnabled = sConfigMgr->GetOption<bool>("AiPlayerbot.HybridRelevanceEnabled", true);
     pvpPolicyEnabled = sConfigMgr->GetOption<bool>("AiPlayerbot.PvpPolicyEnabled", true);
+
+    mlLoggingEnabled = sConfigMgr->GetOption<bool>("AiPlayerbot.MlLoggingEnabled", false);
+    mlLogAllBots = sConfigMgr->GetOption<bool>("AiPlayerbot.MlLogAllBots", false);
+    mlLogFile = sConfigMgr->GetOption<std::string>("AiPlayerbot.MlLogFile", "ml_decisions.csv");
+    mlRewardDelayMs = sConfigMgr->GetOption<uint32>("AiPlayerbot.MlRewardDelayMs", 2000);
+    mlHybridAlpha = sConfigMgr->GetOption<float>("AiPlayerbot.MlHybridAlpha", 0.0f);
+    mlPvpAlpha = sConfigMgr->GetOption<float>("AiPlayerbot.MlPvpAlpha", 0.0f);
+    mlModelPathHybrid = sConfigMgr->GetOption<std::string>("AiPlayerbot.MlModelPathHybrid", "");
+    mlModelPathPvp = sConfigMgr->GetOption<std::string>("AiPlayerbot.MlModelPathPvp", "");
+
+    if (mlHybridAlpha > 0.0f || mlPvpAlpha > 0.0f)
+        sMlScorer.Reload();
 
     useGroundMountAtMinLevel = sConfigMgr->GetOption<int32>("AiPlayerbot.UseGroundMountAtMinLevel", 20);
     useFastGroundMountAtMinLevel = sConfigMgr->GetOption<int32>("AiPlayerbot.UseFastGroundMountAtMinLevel", 40);

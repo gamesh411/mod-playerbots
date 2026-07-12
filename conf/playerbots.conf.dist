@@ -2187,6 +2187,32 @@ AiPlayerbot.HybridRelevanceEnabled = 1
 AiPlayerbot.PvpPolicyEnabled = 1
 
 #
+# OFFLINE LEARNING (log -> train -> MLP weights -> blend)
+#
+# Write decision + delayed-reward rows for offline training (tools/ml/train_ranker.py).
+# Default samples: bots with a real player master, or in BG/arena.
+# Default: 0 (disabled)
+AiPlayerbot.MlLoggingEnabled = 0
+
+# Also log random world bots (noisy, high volume). Default: 0
+AiPlayerbot.MlLogAllBots = 0
+
+# Output CSV path (relative to cwd / LogsDir typically). Default: ml_decisions.csv
+AiPlayerbot.MlLogFile = "ml_decisions.csv"
+
+# Milliseconds before reward is computed for a logged action. Default: 2000
+AiPlayerbot.MlRewardDelayMs = 2000
+
+# Blend weight for trained MLP vs heuristics (0 = heuristics only, 1 = model only).
+# Keep at 0 until you have trained PBML1 weight files.
+AiPlayerbot.MlHybridAlpha = 0.0
+AiPlayerbot.MlPvpAlpha = 0.0
+
+# Paths to PBML1 model files produced by tools/ml/train_ranker.py (empty = unused)
+AiPlayerbot.MlModelPathHybrid = ""
+AiPlayerbot.MlModelPathPvp = ""
+
+#
 #
 ####################################################################################################
 
