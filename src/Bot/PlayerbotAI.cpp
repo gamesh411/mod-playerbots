@@ -31,6 +31,7 @@
 #include "LogLevelAction.h"
 #include "LootObjectStack.h"
 #include "MapMgr.h"
+#include "MlDecisionLogger.h"
 #include "MotionMaster.h"
 #include "MoveSplineInit.h"
 #include "NewRpgStrategy.h"
@@ -400,6 +401,8 @@ void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal)
 
     // Update internal AI
     UpdateAIInternal(elapsed, minimal);
+    if (sPlayerbotAIConfig.mlLoggingEnabled)
+        sMlDecisionLogger.Update(this);
     YieldThread(bot, GetReactDelay());
 }
 
