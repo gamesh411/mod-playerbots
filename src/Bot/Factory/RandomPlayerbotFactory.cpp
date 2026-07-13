@@ -7,10 +7,14 @@
 #include "RandomPlayerbotFactory.h"
 
 #include "AccountMgr.h"
+#include "ArenaTeam.h"
 #include "ArenaTeamMgr.h"
 #include "CharacterCache.h"
 #include "DatabaseEnv.h"
+#include "ObjectAccessor.h"
+#include "Player.h"
 #include "PlayerbotAI.h"
+#include "PlayerbotAIConfig.h"
 #include "RaceMgr.h"
 #include "ScriptMgr.h"
 #include "SharedDefines.h"
@@ -885,6 +889,94 @@ void RandomPlayerbotFactory::CreateRandomArenaTeams(ArenaType type, uint32 count
     if (arenaTeamNumber != before || arenaTeamNumber < count)
         LOG_INFO("playerbots", "{} random bot {}vs{} arena teams available (target {})", arenaTeamNumber, uint32(type),
                  uint32(type), count);
+}
+
+void RandomPlayerbotFactory::FillIncompleteRandomArenaTeams()
+{
+    // Build free-bot pools (online, level 70+, not already on any arena team).
+    GuidVector freeAlliance;
+    GuidVector freeHorde;
+
+    PlayerbotsDatabasePreparedStatement* stmt = PlayerbotsDatabase.GetPreparedStatement(PLAYERBOTS_SEL_RANDOM_BOTS_BOT);
+    stmt->SetData(0, "add");
+    if (PreparedQueryResult result = PlayerbotsDatabase.Query(stmt))
+    {
+        do
+        {
+            Field* fields = result->Fetch();
+            ObjectGuid guid = ObjectGuid::Create<HighGuid::Player>(fields[0].Get<uint32>());
+            Player* bot = ObjectAccessor::FindConnectedPlayer(guid);
+            if (!bot || bot->GetLevel() < 70)
+                continue;
+
+            bool inTeam = false;
+            for (uint32 arenaSlot = 0; arenaSlot < MAX_ARENA_SLOT; ++arenaSlot)
+            {
+                if (bot->GetArenaTeamId(arenaSlot) || sCharacterCache->GetCharacterArenaTeamIdByGuid(guid, arenaSlot))
+                {
+                    inTeam = true;
+                    break;
+                }
+            }
+            if (inTeam)
+                continue;
+
+            if (bot->GetTeamId() == TEAM_ALLIANCE)
+                freeAlliance.push_back(guid);
+            else
+                freeHorde.push_back(guid);
+        } while (result->NextRow());
+    }
+
+    if (freeAlliance.empty() && freeHorde.empty())
+        return;
+
+    uint32 added = 0;
+    for (uint32 teamId : sPlayerbotAIConfig.randomBotArenaTeams)
+    {
+        ArenaTeam* arenateam = sArenaTeamMgr->GetArenaTeamById(teamId);
+        if (!arenateam)
+            continue;
+
+        uint32 const need = arenateam->GetType();
+        while (arenateam->GetMembersSize() < need)
+        {
+            Player* captain = ObjectAccessor::FindConnectedPlayer(arenateam->GetCaptain());
+            if (!captain)
+                break;
+
+            GuidVector& pool = (captain->GetTeamId() == TEAM_ALLIANCE) ? freeAlliance : freeHorde;
+            if (pool.empty())
+                break;
+
+            ObjectGuid memberGuid = pool.back();
+            pool.pop_back();
+
+            Player* member = ObjectAccessor::FindConnectedPlayer(memberGuid);
+            if (!member || member->GetTeamId() != captain->GetTeamId())
+                continue;
+
+            if (!arenateam->AddMember(memberGuid))
+                continue;
+
+            ++added;
+
+            if (arenateam->GetMembersSize() >= need)
+            {
+                uint32 teamRating = arenateam->GetRating();
+                arenateam->SetRatingForAll(teamRating);
+                for (auto& m : arenateam->GetMembers())
+                {
+                    m.MatchMakerRating = m.PersonalRating;
+                    m.MaxMMR = std::max(m.MaxMMR, m.PersonalRating);
+                }
+                arenateam->SaveToDB(true);
+            }
+        }
+    }
+
+    if (added)
+        LOG_INFO("playerbots", "Filled {} members into incomplete random arena teams", added);
 }
 
 std::string const RandomPlayerbotFactory::CreateRandomArenaTeamName()

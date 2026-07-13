@@ -53,6 +53,8 @@ public:
     Player* CreateRandomBot(WorldSession* session, uint8 cls, std::unordered_map<NameRaceAndGender, std::vector<std::string>>& names);
     static void CreateRandomBots();
     static void CreateRandomArenaTeams(ArenaType slot, uint32 count);
+    // Top up captain-only shells from online free bots (same faction). Call after CreateRandomArenaTeams.
+    static void FillIncompleteRandomArenaTeams();
     static std::string const CreateRandomGuildName();
     static uint32 CalculateTotalAccountCount();
     static uint32 CalculateAvailableCharsPerAccount();

@@ -4770,6 +4770,8 @@ void PlayerbotFactory::InitArenaTeam()
     RandomPlayerbotFactory::CreateRandomArenaTeams(ARENA_TYPE_2v2, sPlayerbotAIConfig.randomBotArenaTeam2v2Count);
     RandomPlayerbotFactory::CreateRandomArenaTeams(ARENA_TYPE_3v3, sPlayerbotAIConfig.randomBotArenaTeam3v3Count);
     RandomPlayerbotFactory::CreateRandomArenaTeams(ARENA_TYPE_5v5, sPlayerbotAIConfig.randomBotArenaTeam5v5Count);
+    // Captain-only shells cannot rated-queue; fill from online free bots now (do not wait for rare Randomize).
+    RandomPlayerbotFactory::FillIncompleteRandomArenaTeams();
 
     std::vector<uint32> arenateams;
     for (std::vector<uint32>::iterator i = sPlayerbotAIConfig.randomBotArenaTeams.begin();
