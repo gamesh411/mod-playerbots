@@ -32,13 +32,14 @@ Hook near `Engine::DoNextAction` after an action succeeds; reward resolved ~`MlR
 
 | Field | Purpose |
 |---|---|
-| features f0..f11 | `CombatFeatureVector` |
-| action flags a0..a5 | interrupt/healer/defensive/cc/heal/instant |
-| chosen action | label context |
+| features f0..f11 | `CombatFeatureVector` (heal-cast = any positive spell) |
+| action flags a0..a7 | interrupt / healer-focus / defensive / CC / heal / instant / damage / focus-player |
+| `in_bg` / `in_arena` | PvP activity zone (train hybrid, `--pvp-only`, or `--pve-only`) |
+| chosen action | label context (meta/navigation pruned) |
 | heuristic / final score | baseline |
-| **reward** | interrupt proxy, HP deltas, kill, healer pressure |
+| **reward** | interrupt (+heal stop bonus), HP deltas, kill, healer pressure; mild survival |
 
-Default: log mastered bots + BG/arena (`MlLogAllBots=0`).
+Default: mastered bots, BG/arena, or anyone in combat (`MlLogAllBots=0`).
 
 ---
 

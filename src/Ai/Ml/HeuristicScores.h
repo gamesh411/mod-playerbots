@@ -16,21 +16,23 @@ namespace HeuristicScores
 float Hybrid(PlayerbotAI* botAI, Action* action, CombatFeatureVector const& features);
 float PvpPolicy(PlayerbotAI* botAI, Action* action, CombatFeatureVector const& features);
 
-// Action-type flags used as extra MLP inputs (must match trainer).
-void FillActionFlags(std::string const& name, float outFlags[6]);
+// Action-type flags used as extra MLP inputs (must match trainer / AF_COUNT).
+void FillActionFlags(std::string const& name, float outFlags[8]);
 }  // namespace HeuristicScores
 
 enum ActionFlagIndex : size_t
 {
-    AF_INTERRUPT = 0,
-    AF_ENEMY_HEALER,
+    AF_INTERRUPT = 0,      // any interrupt ability (spell-agnostic role)
+    AF_ENEMY_HEALER,       // healer pressure / interrupt-into-heal intent
     AF_DEFENSIVE,
     AF_CC,
     AF_HEAL,
     AF_INSTANT,
-    AF_COUNT = 6
+    AF_DAMAGE,             // damaging pressure
+    AF_FOCUS_PLAYER,       // focus enemy player / flag carrier
+    AF_COUNT = 8
 };
 
-static constexpr size_t ML_INPUT_DIM = CF_FEATURE_COUNT + AF_COUNT;  // 18
+static constexpr size_t ML_INPUT_DIM = CF_FEATURE_COUNT + AF_COUNT;  // 20
 
 #endif

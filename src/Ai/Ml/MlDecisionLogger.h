@@ -29,6 +29,7 @@ struct MlPendingDecision
     uint8 selfHpAtLog = 100;
     uint8 targetHpAtLog = 100;
     bool targetWasCasting = false;
+    bool targetWasHealing = false;
     bool wasInterruptAction = false;
     bool inArena = false;
     bool inBg = false;

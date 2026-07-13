@@ -22,7 +22,7 @@ enum CombatFeatureIndex : size_t
     CF_TARGET_HEALTH,
     CF_TARGET_IS_PLAYER,
     CF_TARGET_IS_CASTING,
-    CF_HAS_ENEMY_HEALER,
+    CF_HAS_ENEMY_HEALER,  // enemy casting a positive/heal spell (spell-agnostic)
     CF_ENEMY_PLAYER_NEAR,
     CF_PARTY_LOW_HEALTH,
     CF_IN_BATTLEGROUND,
@@ -48,12 +48,16 @@ public:
 
 namespace CombatDecisionUtil
 {
+bool IsMetaAction(std::string const& name);
 bool IsInterruptAction(std::string const& name);
 bool IsEnemyHealerAction(std::string const& name);
 bool IsDefensiveAction(std::string const& name);
 bool IsCrowdControlAction(std::string const& name);
 bool IsHealActionName(std::string const& name);
+bool IsDamageAction(std::string const& name);
+bool IsFocusPlayerAction(std::string const& name);
 bool IsInstantPreferredAction(std::string const& name);
+bool IsLoggableCombatAction(std::string const& name);
 }  // namespace CombatDecisionUtil
 
 #endif

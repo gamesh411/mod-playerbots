@@ -87,9 +87,10 @@ bool MlMlpModel::Load(std::string const& path)
 
 float MlMlpModel::Forward(float const* input, size_t inputLen) const
 {
-    if (!loaded || !input || inputLen != inputDim)
+    if (!loaded || !input || inputLen < inputDim)
         return 0.0f;
 
+    // Newer loggers may pass more action flags; older PBML1 files use the leading inputDim.
     std::vector<float> hidden(hiddenDim, 0.0f);
     for (size_t h = 0; h < hiddenDim; ++h)
     {

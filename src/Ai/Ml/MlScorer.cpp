@@ -27,15 +27,15 @@ void MlScorer::Reload()
         pvpModel.Load(sPlayerbotAIConfig.mlModelPathPvp);
 }
 
-void MlScorer::BuildInput(CombatFeatureVector const& features, std::string const& actionName, float* out18) const
+void MlScorer::BuildInput(CombatFeatureVector const& features, std::string const& actionName, float* out) const
 {
     for (size_t i = 0; i < CF_FEATURE_COUNT; ++i)
-        out18[i] = features[i];
+        out[i] = features[i];
 
     float flags[AF_COUNT];
     HeuristicScores::FillActionFlags(actionName, flags);
     for (size_t i = 0; i < AF_COUNT; ++i)
-        out18[CF_FEATURE_COUNT + i] = flags[i];
+        out[CF_FEATURE_COUNT + i] = flags[i];
 }
 
 float MlScorer::RawToMultiplier(float raw, float lo, float hi) const

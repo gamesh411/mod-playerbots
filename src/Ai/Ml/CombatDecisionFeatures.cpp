@@ -6,10 +6,43 @@
 #include "CombatDecisionFeatures.h"
 
 #include <algorithm>
+#include <cctype>
 #include <sstream>
 
 #include "Playerbots.h"
 #include "ServerFacade.h"
+
+namespace
+{
+std::string ToLowerCopy(std::string const& s)
+{
+    std::string out = s;
+    for (char& c : out)
+        c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    return out;
+}
+
+bool ContainsAny(std::string const& hay, std::initializer_list<char const*> needles)
+{
+    for (char const* n : needles)
+        if (hay.find(n) != std::string::npos)
+            return true;
+    return false;
+}
+
+bool UnitCastingPositive(Unit* unit)
+{
+    if (!unit)
+        return false;
+    Spell* genericSpell = unit->GetCurrentSpell(CURRENT_GENERIC_SPELL);
+    if (genericSpell && genericSpell->m_spellInfo && genericSpell->m_spellInfo->IsPositive())
+        return true;
+    Spell* channelSpell = unit->GetCurrentSpell(CURRENT_CHANNELED_SPELL);
+    if (channelSpell && channelSpell->m_spellInfo && channelSpell->m_spellInfo->IsPositive())
+        return true;
+    return false;
+}
+}  // namespace
 
 CombatFeatureVector CombatDecisionFeaturesValue::Calculate()
 {
@@ -31,29 +64,34 @@ CombatFeatureVector CombatDecisionFeaturesValue::Calculate()
         features[CF_TARGET_HEALTH] = target->GetHealthPct() / 100.0f;
         features[CF_TARGET_IS_PLAYER] = target->IsPlayer() ? 1.0f : 0.0f;
         features[CF_TARGET_IS_CASTING] = target->IsNonMeleeSpellCast(false) ? 1.0f : 0.0f;
+        // Spell-agnostic: any positive cast on the current target counts as heal pressure.
+        if (UnitCastingPositive(target))
+            features[CF_HAS_ENEMY_HEALER] = 1.0f;
     }
 
-    // Detect an enemy casting a positive (typically heal) spell without requiring a specific interrupt name.
+    // Scan attackers and nearby enemy players for positive (heal) casts — not tied to a spell name.
+    auto markHealerIfPositive = [&](Unit* unit)
+    {
+        if (features[CF_HAS_ENEMY_HEALER] > 0.5f)
+            return;
+        if (unit && unit->IsAlive() && UnitCastingPositive(unit))
+            features[CF_HAS_ENEMY_HEALER] = 1.0f;
+    };
+
     GuidVector attackers = AI_VALUE(GuidVector, "attackers");
     for (ObjectGuid const& guid : attackers)
+        markHealerIfPositive(botAI->GetUnit(guid));
+
+    GuidVector nearbyPlayers = AI_VALUE(GuidVector, "nearest enemy players");
+    for (ObjectGuid const& guid : nearbyPlayers)
     {
         Unit* unit = botAI->GetUnit(guid);
         if (!unit || !unit->IsAlive())
             continue;
-
-        Spell* genericSpell = unit->GetCurrentSpell(CURRENT_GENERIC_SPELL);
-        if (genericSpell && genericSpell->m_spellInfo && genericSpell->m_spellInfo->IsPositive())
-        {
-            features[CF_HAS_ENEMY_HEALER] = 1.0f;
-            break;
-        }
-
-        Spell* channelSpell = unit->GetCurrentSpell(CURRENT_CHANNELED_SPELL);
-        if (channelSpell && channelSpell->m_spellInfo && channelSpell->m_spellInfo->IsPositive())
-        {
-            features[CF_HAS_ENEMY_HEALER] = 1.0f;
-            break;
-        }
+        if (!ServerFacade::instance().IsDistanceLessOrEqualThan(ServerFacade::instance().GetDistance2d(bot, unit),
+                                                                sPlayerbotAIConfig.sightDistance))
+            continue;
+        markHealerIfPositive(unit);
     }
 
     Unit* enemyPlayer = AI_VALUE(Unit*, "enemy player target");
@@ -100,58 +138,103 @@ std::string const CombatDecisionFeaturesValue::Format()
 
 namespace CombatDecisionUtil
 {
-bool IsInterruptAction(std::string const& name)
+bool IsMetaAction(std::string const& name)
 {
-    return name.find("kick") != std::string::npos || name.find("pummel") != std::string::npos ||
-           name.find("counterspell") != std::string::npos || name.find("mind freeze") != std::string::npos ||
-           name.find("wind shear") != std::string::npos || name.find("spell lock") != std::string::npos ||
-           name.find("shield bash") != std::string::npos || name.find("strangulate") != std::string::npos ||
-           name.find("silencing shot") != std::string::npos || name.find("arcane torrent") != std::string::npos ||
-           name.find("deadly throw") != std::string::npos || name.find("gouge") != std::string::npos;
+    std::string const n = ToLowerCopy(name);
+    return ContainsAny(n,
+                       {"set facing", "reach melee", "reach spell", "check mount", "check objective", "reset objective",
+                        "move to objective", "move to start", "move to", "xp gain", "drop target", "dps assist",
+                        "apply oil", "apply stone", "auto release", "self resurrect", "follow", "food", "drink",
+                        "unstealth", "set behind", "set pet", "toggle pet", "cast greater blessing assignment",
+                        "select new target", "update strategy", "chat", "emote", "rpg ", "travel", "grind", "loot",
+                        "add all loot", "equip", "use stone", "use oil", "wait for", "guard", "stay", "follow master"});
 }
 
-bool IsEnemyHealerAction(std::string const& name) { return name.find("on enemy healer") != std::string::npos; }
+bool IsInterruptAction(std::string const& name)
+{
+    std::string const n = ToLowerCopy(name);
+    // Role flag: any interrupt — concrete spell name does not matter for the MLP.
+    return ContainsAny(n, {"kick", "pummel", "counterspell", "mind freeze", "wind shear", "spell lock", "shield bash",
+                           "strangulate", "silencing shot", "arcane torrent", "deadly throw", "gouge", "silence",
+                           "bash"});
+}
+
+bool IsEnemyHealerAction(std::string const& name)
+{
+    std::string const n = ToLowerCopy(name);
+    // Explicit healer-focus actions only. Heal-cast presence is CF_HAS_ENEMY_HEALER (spell-agnostic).
+    return ContainsAny(n, {"on enemy healer", "enemy healer"});
+}
 
 bool IsDefensiveAction(std::string const& name)
 {
-    return name.find("ice block") != std::string::npos || name.find("divine shield") != std::string::npos ||
-           name.find("divine protection") != std::string::npos || name.find("barkskin") != std::string::npos ||
-           name.find("survival instincts") != std::string::npos || name.find("shield wall") != std::string::npos ||
-           name.find("last stand") != std::string::npos || name.find("cloak of shadows") != std::string::npos ||
-           name.find("dispersion") != std::string::npos || name.find("pain suppression") != std::string::npos ||
-           name.find("hand of protection") != std::string::npos || name.find("blessing of protection") != std::string::npos ||
-           name.find("deterrence") != std::string::npos || name.find("die by the sword") != std::string::npos ||
-           name.find("anti-magic shell") != std::string::npos || name.find("icebound fortitude") != std::string::npos;
+    std::string const n = ToLowerCopy(name);
+    return ContainsAny(n, {"ice block", "divine shield", "divine protection", "barkskin", "survival instincts",
+                           "shield wall", "last stand", "cloak of shadows", "dispersion", "pain suppression",
+                           "hand of protection", "blessing of protection", "deterrence", "die by the sword",
+                           "anti-magic shell", "icebound fortitude", "shield block", "feign death", "vanish",
+                           "fade", "hand of sacrifice", "blessing of sacrifice", "guardian spirit"});
 }
 
 bool IsCrowdControlAction(std::string const& name)
 {
-    return name.find("polymorph") != std::string::npos || name.find("fear") != std::string::npos ||
-           name.find("hammer of justice") != std::string::npos || name.find("repentance") != std::string::npos ||
-           name.find("blind") != std::string::npos || name.find("hex") != std::string::npos ||
-           name.find("cyclone") != std::string::npos || name.find("sap") != std::string::npos ||
-           name.find("freezing trap") != std::string::npos || name.find("wyvern sting") != std::string::npos ||
-           name.find("scatter shot") != std::string::npos || name.find("death coil") != std::string::npos ||
-           name.find("banish") != std::string::npos || name.find("seduction") != std::string::npos;
+    std::string const n = ToLowerCopy(name);
+    // Exclude "death coil" — it is primarily damage/fear hybrid and polluted CC flags.
+    if (n.find("death coil") != std::string::npos)
+        return false;
+    return ContainsAny(n, {"polymorph", "fear", "hammer of justice", "repentance", "blind", "hex", "cyclone", "sap",
+                           "freezing trap", "wyvern sting", "scatter shot", "banish", "seduction", "hibernate",
+                           "shackle", "turn evil", "scare beast", "psychic scream", "howl of terror", "cheap shot",
+                           "kidney shot", "deep freeze", "frost nova", "entangling roots", "nature's grasp"});
 }
 
 bool IsHealActionName(std::string const& name)
 {
-    return name.find("heal") != std::string::npos || name.find("flash") != std::string::npos ||
-           name.find("renew") != std::string::npos || name.find("rejuvenation") != std::string::npos ||
-           name.find("regrowth") != std::string::npos || name.find("nourish") != std::string::npos ||
-           name.find("lesser heal") != std::string::npos || name.find("holy light") != std::string::npos ||
-           name.find("flash of light") != std::string::npos || name.find("lay on hands") != std::string::npos ||
-           name.find("righteous defense") != std::string::npos || name.find("chain heal") != std::string::npos ||
-           name.find("riptide") != std::string::npos || name.find("healing wave") != std::string::npos ||
-           name.find("lesser healing wave") != std::string::npos;
+    std::string const n = ToLowerCopy(name);
+    return ContainsAny(n, {"heal", "flash", "renew", "rejuvenation", "regrowth", "nourish", "holy light",
+                           "flash of light", "lay on hands", "chain heal", "riptide", "healing wave",
+                           "lesser healing wave", "penance", "circle of healing", "prayer of mending",
+                           "prayer of healing", "binding heal", "wild growth", "lifebloom", "holy shock",
+                           "gift of the naaru", "bandage"});
+}
+
+bool IsDamageAction(std::string const& name)
+{
+    if (IsHealActionName(name) || IsDefensiveAction(name) || IsCrowdControlAction(name) || IsMetaAction(name))
+        return false;
+    std::string const n = ToLowerCopy(name);
+    return ContainsAny(n, {"attack", "strike", "shot", "bolt", "fireball", "frostbolt", "shadow bolt", "smite",
+                           "wrath", "starfire", "lava", "chaos", "arcane blast", "arcane missiles", "mind blast",
+                           "mind flay", "corruption", "immolate", "incinerate", "conflagrate", "haunt", "unstable affliction",
+                           "serpent sting", "steady shot", "aimed shot", "multi-shot", "chimera", "explosive shot",
+                           "mortal strike", "heroic strike", "slam", "execute", "bloodthirst", "whirlwind",
+                           "sinister", "eviscerate", "envenom", "mutilate", "backstab", "hemorrhage",
+                           "crusader", "judgement", "consecration", "exorcism", "hammer of wrath",
+                           "lightning bolt", "earth shock", "flame shock", "lava burst", "stormstrike",
+                           "icy touch", "plague strike", "death coil", "death strike", "heart strike", "scourge strike",
+                           "obliterate", "frost strike", "mangle", "shred", "rip", "rake", "ferocious bite",
+                           "swipe", "claw", "melee", "auto shot", "moonfire", "insect swarm", "holy fire",
+                           "shadow word", "devouring plague", "vampiric touch"});
+}
+
+bool IsFocusPlayerAction(std::string const& name)
+{
+    std::string const n = ToLowerCopy(name);
+    return ContainsAny(n, {"attack enemy player", "attack enemy flag carrier", "on enemy player", "enemy flag carrier"});
 }
 
 bool IsInstantPreferredAction(std::string const& name)
 {
     return IsInterruptAction(name) || IsDefensiveAction(name) || IsCrowdControlAction(name) ||
-           name.find("trinket") != std::string::npos || name.find("vanish") != std::string::npos ||
-           name.find("shadowstep") != std::string::npos || name.find("blink") != std::string::npos ||
-           name.find("disengage") != std::string::npos;
+           ContainsAny(ToLowerCopy(name), {"trinket", "vanish", "shadowstep", "blink", "disengage", "gift of the naaru"});
+}
+
+bool IsLoggableCombatAction(std::string const& name)
+{
+    if (name.empty() || IsMetaAction(name))
+        return false;
+    // Keep anything with a combat role flag, or generic non-meta combat actions.
+    return IsInterruptAction(name) || IsHealActionName(name) || IsDefensiveAction(name) || IsCrowdControlAction(name) ||
+           IsDamageAction(name) || IsFocusPlayerAction(name) || IsEnemyHealerAction(name);
 }
 }  // namespace CombatDecisionUtil

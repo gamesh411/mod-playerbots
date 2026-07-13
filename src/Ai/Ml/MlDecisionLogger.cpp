@@ -30,8 +30,13 @@ void MlDecisionLogger::OnActionExecuted(PlayerbotAI* botAI, std::string const& a
     if (!bot || !bot->IsInWorld())
         return;
 
-    // Prefer mastered / BG / arena samples; optionally log all.
-    bool interesting = botAI->HasRealPlayerMaster() || bot->InBattleground() || bot->InArena();
+    // Skip navigation / maintenance noise (phase A).
+    if (!CombatDecisionUtil::IsLoggableCombatAction(actionName))
+        return;
+
+    // Universal PvE + PvP: BG/arena, mastered bots, or anyone currently in combat.
+    // in_bg / in_arena columns keep the activity-zone distinction for separate trainers.
+    bool interesting = botAI->HasRealPlayerMaster() || bot->InBattleground() || bot->InArena() || bot->IsInCombat();
     if (!interesting && !sPlayerbotAIConfig.mlLogAllBots)
         return;
 
@@ -53,12 +58,12 @@ void MlDecisionLogger::OnActionExecuted(PlayerbotAI* botAI, std::string const& a
     d.selfHpAtLog = static_cast<uint8>(features[CF_SELF_HEALTH] * 100.0f);
     d.targetHpAtLog = static_cast<uint8>(features[CF_TARGET_HEALTH] * 100.0f);
     d.targetWasCasting = features[CF_TARGET_IS_CASTING] > 0.5f;
+    d.targetWasHealing = features[CF_HAS_ENEMY_HEALER] > 0.5f;
     d.wasInterruptAction = CombatDecisionUtil::IsInterruptAction(actionName);
     d.inArena = bot->InArena();
     d.inBg = bot->InBattleground();
 
     std::lock_guard<std::mutex> lock(mtx);
-    // Bound memory
     while (pending.size() > 5000)
         pending.pop_front();
     pending.push_back(d);
@@ -75,17 +80,18 @@ float MlDecisionLogger::ComputeReward(PlayerbotAI* botAI, MlPendingDecision cons
         return 0.0f;
 
     float reward = 0.0f;
+    float survival = 0.0f;
     uint8 selfHpNow = AI_VALUE2(uint8, "health", "self target");
     Unit* target = AI_VALUE(Unit*, "current target");
     uint8 targetHpNow = target && target->IsAlive() ? static_cast<uint8>(target->GetHealthPct()) : 0;
 
-    // Survived the window
+    // Survival matters but must not dominate: small alive bonus, keep HP swing signals.
     if (selfHpNow > 0)
-        reward += 0.2f;
+        survival += 0.05f;
     if (selfHpNow + 15 < d.selfHpAtLog)
-        reward -= 0.8f;  // took a big hit after the action
+        survival -= 0.8f;
     if (selfHpNow > d.selfHpAtLog + 10)
-        reward += 0.5f;  // recovered
+        survival += 0.5f;
 
     // Pressure on target
     if (target && target->IsAlive() && targetHpNow + 10 < d.targetHpAtLog)
@@ -93,20 +99,25 @@ float MlDecisionLogger::ComputeReward(PlayerbotAI* botAI, MlPendingDecision cons
     if (target && !target->IsAlive())
         reward += 2.0f;
 
-    // Interrupt success proxy: was casting, we used interrupt, and they are no longer casting
+    // Interrupt success: spell-agnostic (any interrupt vs any cast; extra if it was a heal cast).
     if (d.wasInterruptAction && d.targetWasCasting)
     {
         bool stillCasting = target && target->IsNonMeleeSpellCast(false);
-        reward += stillCasting ? -1.0f : 1.5f;
+        float interruptReward = stillCasting ? -1.0f : 1.5f;
+        if (!stillCasting && d.targetWasHealing)
+            interruptReward += 0.5f;  // stopping a heal is especially good
+        reward += interruptReward;
     }
 
-    // Enemy healer pressure
     CombatFeatureVector now = AI_VALUE(CombatFeatureVector, "combat decision features");
     if (d.features[CF_HAS_ENEMY_HEALER] > 0.5f && now[CF_HAS_ENEMY_HEALER] < 0.5f)
         reward += 0.7f;
 
+    reward += survival;
+
+    // Mild PvP activity boost (BG/arena), not a second survival multiplier.
     if (d.inArena || d.inBg)
-        reward *= 1.25f;
+        reward *= 1.15f;
 
     return reward;
 }
