@@ -16,9 +16,9 @@ Short answer: **offline**. The live `worldserver` collects experience as logged 
 | Alpha blend heuristic↔MLP | **Implemented** (`MlHybridAlpha` / `MlPvpAlpha`) |
 | Offline trainer | **Implemented** (`tools/ml/train_ranker.py`, `--arena-only`) |
 | Engine + UpdateAI hooks | **Implemented** |
-| Duels-first feature packs / difficulty dial | **Documented next** ([DIRECTIONS D6–D8](ml/DIRECTIONS.md)) |
-| Duel bracket (idle → duel, config pairs) | **In progress** ([DEC-012](ml/DECISIONS.md) / D12) |
-| Action-head / ranking net | **Primary arch** ([DEC-011](ml/DECISIONS.md) / D9); Mode A remains baseline |
+| Duels-first feature packs / difficulty dial | **Documented next** ([curriculum](../curriculum/README.md); archived D6–D8 in [DIRECTIONS-pre-curriculum.md](DIRECTIONS-pre-curriculum.md)) |
+| Duel bracket (idle → duel, config pairs) | **In progress** ([DEC-012](../DECISIONS.md) / D12) |
+| Action-head / ranking net | **Primary arch** ([DEC-011](../DECISIONS.md) / D9); Mode A remains baseline |
 
 See `tools/ml/README.md` for enable → play → train → deploy steps.
 
