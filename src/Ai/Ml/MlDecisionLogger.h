@@ -46,6 +46,8 @@ public:
     void FlushEpisode(Player* bot, float terminal);
 
     void RegisterDuelMatch(ObjectGuid a, ObjectGuid b, uint32 matchId);
+    // DEC-023: write a duel_start row with DuelCD (and full feature vector) at match begin.
+    void LogDuelStartSnapshot(Player* bot, uint32 matchId);
     void OnDuelEnd(Player* bot, float terminal);
 
 private:

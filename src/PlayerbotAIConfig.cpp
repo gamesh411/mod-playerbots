@@ -490,7 +490,7 @@ bool PlayerbotAIConfig::Initialize()
     mlDuelBracketAllowedClassMask = sConfigMgr->GetOption<uint32>("AiPlayerbot.MlDuelBracket.AllowedClassMask", 0);
     mlDuelBracketMaxMatchRange = sConfigMgr->GetOption<uint32>("AiPlayerbot.MlDuelBracket.MaxMatchRange", 80);
     mlDuelBracketRematchCooldownMs =
-        sConfigMgr->GetOption<uint32>("AiPlayerbot.MlDuelBracket.RematchCooldownMs", 8000);
+        sConfigMgr->GetOption<uint32>("AiPlayerbot.MlDuelBracket.RematchCooldownMs", 500);
     sMlDuelBracket.LoadFromConfig();
     if (!mlModelPathDuel.empty())
         sMlScorer.Reload();

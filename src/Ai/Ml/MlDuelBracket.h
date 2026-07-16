@@ -57,6 +57,10 @@ public:
     // Waitlist: returns true if a duel was initiated this call.
     bool TryMatchOrQueue(PlayerbotAI* botAI);
 
+    // DEC-023/024: 100% HP + regenerative/ready pools (not Rage / Runic Power).
+    bool IsResourceReady(Player* bot) const;
+    void RestoreForRematch(Player* bot);
+
     void OnDuelStart(Player* p1, Player* p2);
     void OnDuelEnd(Player* winner, Player* loser, DuelCompleteType type);
     void ClearWaiting(ObjectGuid guid);
@@ -75,6 +79,7 @@ private:
     bool ParsePark(std::string const& raw, MlDuelPark& out);
     bool EnsureAtPark(Player* bot);
     bool AreaAllowsDuels(Player* bot) const;
+    bool IsBracketCandidate(Player* bot, PlayerbotAI* botAI) const;
     bool IsIdleEligible(Player* bot, PlayerbotAI* botAI) const;
     bool InitiateDuel(Player* challenger, Player* opponent);
     MlDuelSpecKey SpecOf(Player* bot) const;
@@ -82,7 +87,7 @@ private:
     bool enabled = false;
     uint32 allowedClassMask = 0;
     uint32 maxMatchRange = 80;
-    uint32 rematchCooldownMs = 8000;
+    uint32 rematchCooldownMs = 500;
     std::vector<MlDuelPair> pairs;
     MlDuelPark alliancePark;
     MlDuelPark hordePark;

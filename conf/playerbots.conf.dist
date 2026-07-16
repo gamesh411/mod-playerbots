@@ -2547,7 +2547,8 @@ AiPlayerbot.MlDuelBracket.ParkHorde = "1,1357,-4369,26.5,3.5"
 # 0 derives the class mask from Pairs.
 AiPlayerbot.MlDuelBracket.AllowedClassMask = 0
 AiPlayerbot.MlDuelBracket.MaxMatchRange = 80
-AiPlayerbot.MlDuelBracket.RematchCooldownMs = 8000
+# Farm rematch debounce only (DEC-023); resource wait is replaced by park restore.
+AiPlayerbot.MlDuelBracket.RematchCooldownMs = 500
 # reward = short_reward + TerminalLambda * terminal; keep terminal dominant.
 AiPlayerbot.MlDuelBracket.TerminalLambda = 25.0
 

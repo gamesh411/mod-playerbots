@@ -250,6 +250,37 @@ void MlDecisionLogger::RegisterDuelMatch(ObjectGuid a, ObjectGuid b, uint32 matc
     duelMatchByGuid[b.GetCounter()] = matchId;
 }
 
+void MlDecisionLogger::LogDuelStartSnapshot(Player* bot, uint32 matchId)
+{
+    if (!sPlayerbotAIConfig.mlLoggingEnabled || !bot || !matchId)
+        return;
+
+    PlayerbotAI* botAI = GET_PLAYERBOT_AI(bot);
+    if (!botAI)
+        return;
+
+    AiObjectContext* context = botAI->GetAiObjectContext();
+    if (!context)
+        return;
+
+    auto* featureValue = context->GetValue<CombatFeatureVector>("combat decision features");
+    if (!featureValue)
+        return;
+
+    MlPendingDecision d;
+    d.episodeId = nextEpisodeId++;
+    d.matchId = matchId;
+    d.botGuid = bot->GetGUID();
+    d.logTimeMs = getMSTime();
+    d.features = featureValue->Get();
+    d.actionName = "duel_start";
+    d.heuristicScore = 0.0f;
+    d.finalScore = 0.0f;
+    d.shortReward = 0.0f;
+    d.shortResolved = true;
+    WriteRow(d, 0.0f, 0.0f);
+}
+
 void MlDecisionLogger::OnDuelEnd(Player* bot, float terminal)
 {
     if (!sPlayerbotAIConfig.mlLoggingEnabled || !bot)

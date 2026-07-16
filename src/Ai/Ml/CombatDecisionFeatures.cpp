@@ -441,6 +441,7 @@ bool IsMetaAction(std::string const& name)
                        {"set facing", "reach melee", "reach spell", "check mount", "check objective", "reset objective",
                         "move to objective", "move to start", "move to", "xp gain", "drop target", "dps assist",
                         "apply oil", "apply stone", "auto release", "self resurrect", "follow", "food", "drink",
+                        "duel_start",
                         "unstealth", "set behind", "set pet", "toggle pet", "cast greater blessing assignment",
                         "select new target", "update strategy", "chat", "emote", "rpg ", "travel", "grind", "loot",
                         "add all loot", "equip", "use stone", "use oil", "wait for", "guard", "stay", "follow master",
