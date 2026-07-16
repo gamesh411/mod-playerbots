@@ -37,7 +37,7 @@ Prior tracks (Mode A primary, pure-random spellbook S0, arena-first farm, latenc
 | Feature vector | `src/Ai/Ml/CombatDecisionFeatures.*` |
 | Action flags | `HeuristicScores.h` `ActionFlagIndex` |
 | Decision logging | `src/Ai/Ml/MlDecisionLogger.*` |
-| Duel bracket | `src/Ai/Ml/MlDuelBracket.*` ([import inventory](research/duel-farm-infrastructure-import.md) / DEC-020) |
+| Duel bracket | `src/Ai/Ml/MlDuelBracket.*` ([import inventory](research/duel-farm-infrastructure-import.md) / **DEC-021**) |
 | Spellbook pool | `src/Ai/Ml/MlDuelSpellPool.*` (S2; ship with import, conf `queue` until S2) |
 | Engine policy | `src/Bot/Engine/Engine.cpp` |
 | Trainer / analysis | `tools/ml/` |

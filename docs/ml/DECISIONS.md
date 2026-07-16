@@ -178,9 +178,16 @@ Consequences: …
 **Consequences:** Populate `artifacts/duel/s{N}/` and fill stage-card TBDs only when a stage freezes (S0 via [#9](https://github.com/gamesh411/mod-playerbots/issues/9)+). [#13](https://github.com/gamesh411/mod-playerbots/issues/13) maps `duel-s{N}` into `wotlk-playerbots-server` / conf.dist. VODs/metrics remain out of this contract.
 
 ### DEC-020 — 2026-07-16 — Duel farm infrastructure import inventory
-**Status:** accepted  
+**Status:** superseded by DEC-021  
 **Context:** [Duel farm infrastructure import (bracket, features, logger)](https://github.com/gamesh411/mod-playerbots/issues/12). `exp/duel-rl-curriculum` is clean `origin/master` (no `src/Ai/Ml/`); duel WIP lives on `wip/duel-farm-uncommitted` atop the mixed archive tip.  
 **Decision:** Path-selective import from **`wip/duel-farm-uncommitted` tip** onto `exp` — bracket, 70-D features, duel logger, spell pool, MlScorer/MlMlpModel, Engine duel hooks + Queue `Baskets`/`PopBasket`, conf/wiring, `tools/ml` trainers. Import Mode B/C hybrid strategies **dormant** (`HybridRelevanceEnabled=0`). **Do not** import arena team fill / BG strategy archive hunks. On import, rewrite duel conf defaults to DEC-018 (`SpellPool=queue`, `ActionPolicy=softmax-stock` or interim `heuristic` until Softmax lands). Keep existing `docs/ml/` hub; do not overwrite from wip docs. Full inventory: [`docs/ml/research/duel-farm-infrastructure-import.md`](research/duel-farm-infrastructure-import.md).  
 **Why:** Need a coherent farm substrate for S0–S2 without pulling arena-first history or wrong showcase defaults (random+spellbook).  
 **Consequences:** Execution is a follow-on AFK task blocking [#9](https://github.com/gamesh411/mod-playerbots/issues/9); Engine Softmax behaviour remains [#9](https://github.com/gamesh411/mod-playerbots/issues/9), not part of the file copy.
+
+### DEC-021 — 2026-07-16 — Curriculum-only import (no dormant Mode B/C)
+**Status:** accepted  
+**Context:** Upstreamability of `exp/duel-rl-curriculum`; DEC-020 allowed Mode B/C hybrid strategies to land disabled. That still widens the PR surface with non-curriculum code.  
+**Decision:** Supersede DEC-020’s “import dormant Mode B/C” clause. Import **only** code strictly necessary for the duel S0→S2 curriculum. **Do not** land `HybridRelevanceStrategy`, `PvpPolicyStrategy`, hybrid/pvp `StrategyContext`/`AiFactory` wiring, `HybridRelevanceEnabled` / dual alpha/model conf, arena ε-greedy Engine path, or BG match-end logger hooks. Slim HeuristicScores / MlScorer / logger to duel flags + single duel ranker path. Arena fill and BG strategy tweaks remain excluded. Research asset updated in place: [`docs/ml/research/duel-farm-infrastructure-import.md`](research/duel-farm-infrastructure-import.md). Execution: [#14](https://github.com/gamesh411/mod-playerbots/issues/14).  
+**Why:** Cleaner upstream contribution; unused strategies are prior art on archive/WIP branches, not ballast on the curriculum line.  
+**Consequences:** [#14](https://github.com/gamesh411/mod-playerbots/issues/14) must slim/rewrite on import rather than copy wip tip; Mode B/C stays recoverable from `archive/wip/pre-curriculum-2026-07-16` / `wip/duel-farm-uncommitted` if ever revived outside this map.
 
