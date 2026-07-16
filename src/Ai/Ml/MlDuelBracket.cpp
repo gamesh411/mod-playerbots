@@ -19,6 +19,7 @@
 #include "PlayerbotAIConfig.h"
 #include "Playerbots.h"
 #include "Random.h"
+#include "SpellDefines.h"
 #include "Timer.h"
 
 namespace
@@ -234,7 +235,59 @@ bool MlDuelBracket::EnsureAtPark(Player* bot)
     return true;
 }
 
-bool MlDuelBracket::IsIdleEligible(Player* bot, PlayerbotAI* botAI) const
+bool MlDuelBracket::IsResourceReady(Player* bot) const
+{
+    if (!bot || !bot->IsAlive())
+        return false;
+    if (!bot->IsFullHealth())
+        return false;
+
+    auto powerFull = [&](Powers power) -> bool {
+        uint32 const maxp = bot->GetMaxPower(power);
+        return maxp == 0 || bot->GetPower(power) >= maxp;
+    };
+
+    // DEC-024: Mana / Energy / Focus gated; Rage + Runic Power ungated.
+    if (!powerFull(POWER_MANA) || !powerFull(POWER_ENERGY) || !powerFull(POWER_FOCUS))
+        return false;
+
+    if (bot->getClass() == CLASS_DEATH_KNIGHT)
+    {
+        for (uint8 i = 0; i < MAX_RUNES; ++i)
+            if (bot->GetRuneCooldown(i) > 0)
+                return false;
+    }
+
+    return true;
+}
+
+void MlDuelBracket::RestoreForRematch(Player* bot)
+{
+    if (!bot || !bot->IsAlive())
+        return;
+
+    bot->SetFullHealth();
+
+    if (uint32 const maxMana = bot->GetMaxPower(POWER_MANA))
+        bot->SetPower(POWER_MANA, maxMana);
+    if (uint32 const maxEnergy = bot->GetMaxPower(POWER_ENERGY))
+        bot->SetPower(POWER_ENERGY, maxEnergy);
+    if (uint32 const maxFocus = bot->GetMaxPower(POWER_FOCUS))
+        bot->SetPower(POWER_FOCUS, maxFocus);
+
+    if (bot->getClass() == CLASS_DEATH_KNIGHT)
+    {
+        for (uint8 i = 0; i < MAX_RUNES; ++i)
+            bot->SetRuneCooldown(i, 0);
+    }
+
+    // Clear eat/drink (and sit) so rematch is not blocked by regen auras.
+    bot->RemoveAurasWithInterruptFlags(AURA_INTERRUPT_FLAG_NOT_SEATED);
+    if (bot->IsSitState())
+        bot->SetStandState(UNIT_STAND_STATE_STAND);
+}
+
+bool MlDuelBracket::IsBracketCandidate(Player* bot, PlayerbotAI* botAI) const
 {
     if (!enabled || !bot || !botAI)
         return false;
@@ -243,8 +296,6 @@ bool MlDuelBracket::IsIdleEligible(Player* bot, PlayerbotAI* botAI) const
     if (bot->InArena() || bot->InBattleground())
         return false;
     if (!bot->IsAlive() || bot->IsInCombat() || bot->duel)
-        return false;
-    if (bot->GetHealthPct() < 90.0f)
         return false;
     if (!IsBotEligibleSpec(bot))
         return false;
@@ -258,6 +309,11 @@ bool MlDuelBracket::IsIdleEligible(Player* bot, PlayerbotAI* botAI) const
     }
 
     return true;
+}
+
+bool MlDuelBracket::IsIdleEligible(Player* bot, PlayerbotAI* botAI) const
+{
+    return IsBracketCandidate(bot, botAI) && IsResourceReady(bot);
 }
 
 bool MlDuelBracket::InitiateDuel(Player* challenger, Player* opponent)
@@ -285,11 +341,12 @@ bool MlDuelBracket::TryMatchOrQueue(PlayerbotAI* botAI)
         return false;
 
     Player* bot = botAI->GetBot();
-    if (!IsIdleEligible(bot, botAI))
+    if (!IsBracketCandidate(bot, botAI))
         return false;
 
     EnsureAtPark(bot);
-    if (!AreaAllowsDuels(bot))
+    RestoreForRematch(bot);
+    if (!AreaAllowsDuels(bot) || !IsResourceReady(bot))
         return false;
 
     MlDuelSpecKey myKey = SpecOf(bot);
@@ -318,7 +375,12 @@ bool MlDuelBracket::TryMatchOrQueue(PlayerbotAI* botAI)
             if (!(it->key == want))
                 continue;
             Player* cand = ObjectAccessor::FindPlayer(it->guid);
-            if (!cand || !IsIdleEligible(cand, GET_PLAYERBOT_AI(cand)))
+            PlayerbotAI* candAI = cand ? GET_PLAYERBOT_AI(cand) : nullptr;
+            if (!cand || !IsBracketCandidate(cand, candAI))
+                continue;
+            EnsureAtPark(cand);
+            RestoreForRematch(cand);
+            if (!IsResourceReady(cand))
                 continue;
             // Same faction preferred for open-world duel flag; allow cross-faction if both at park.
             if (cand->GetMapId() != bot->GetMapId())
@@ -351,6 +413,8 @@ bool MlDuelBracket::TryMatchOrQueue(PlayerbotAI* botAI)
     Player* opponent = challenger == bot ? partner : bot;
     EnsureAtPark(challenger);
     EnsureAtPark(opponent);
+    RestoreForRematch(challenger);
+    RestoreForRematch(opponent);
     return InitiateDuel(challenger, opponent);
 }
 
@@ -380,6 +444,8 @@ void MlDuelBracket::OnDuelStart(Player* p1, Player* p2)
         duelMatchIds[p2->GetGUID().GetCounter()] = matchId;
     }
     sMlDecisionLogger.RegisterDuelMatch(p1->GetGUID(), p2->GetGUID(), matchId);
+    sMlDecisionLogger.LogDuelStartSnapshot(p1, matchId);
+    sMlDecisionLogger.LogDuelStartSnapshot(p2, matchId);
 }
 
 void MlDuelBracket::OnDuelEnd(Player* winner, Player* loser, DuelCompleteType /*type*/)

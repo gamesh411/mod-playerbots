@@ -7,6 +7,7 @@
 #include "AcceptDuelAction.h"
 
 #include "Event.h"
+#include "MlDuelBracket.h"
 #include "Playerbots.h"
 
 bool AcceptDuelAction::Execute(Event event)
@@ -18,9 +19,22 @@ bool AcceptDuelAction::Execute(Event event)
     ObjectGuid playerGuid;
     p >> playerGuid;
 
-    // do not auto duel with low hp
-    if ((!botAI->HasRealPlayerMaster() || (botAI->GetMaster() && botAI->GetMaster()->GetGUID() != playerGuid)) &&
-        AI_VALUE2(uint8, "health", "self target") < 90)
+    bool const skipResourceGate =
+        botAI->HasRealPlayerMaster() && botAI->GetMaster() && botAI->GetMaster()->GetGUID() == playerGuid;
+    bool refuse = false;
+    if (!skipResourceGate)
+    {
+        if (sMlDuelBracket.IsEnabled())
+        {
+            // DEC-023/024: same hard gate as IsIdleEligible (restore then check).
+            sMlDuelBracket.RestoreForRematch(bot);
+            refuse = !sMlDuelBracket.IsResourceReady(bot);
+        }
+        else
+            refuse = AI_VALUE2(uint8, "health", "self target") < 90;
+    }
+
+    if (refuse)
     {
         WorldPacket packet(CMSG_DUEL_CANCELLED, 8);
         packet << flagGuid;
