@@ -348,6 +348,7 @@ public:
     std::string mlDuelBracketLogFile;
     std::string mlDuelBracketActionPolicy;
     std::string mlDuelBracketSpellPool;
+    float mlDuelBracketSoftmaxTemperature;
     std::string mlDuelBracketParkAlliance;
     std::string mlDuelBracketParkHorde;
     uint32 mlDuelBracketAllowedClassMask;

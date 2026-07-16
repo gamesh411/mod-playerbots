@@ -14,10 +14,11 @@ AiPlayerbot.MlRewardDelayMs = 2000
 AiPlayerbot.MlDuelBracket.TerminalLambda = 25.0
 AiPlayerbot.MlDuelBracket.ActionPolicy = "softmax-stock"
 AiPlayerbot.MlDuelBracket.SpellPool = "queue"
+AiPlayerbot.MlDuelBracket.SoftmaxTemperature = 10.0
 ```
 
-`softmax-stock` and `queue` are the curriculum defaults. Until the softmax ticket lands, this keeps the stock relevance
-order. `random` may use `spellbook` or `union` for exploration.
+`softmax-stock` + `queue` are the S0 curriculum defaults (DEC-022): Softmax(τ) over stock scripted-queue
+relevance (τ=10 farm; τ≤0 argmax for demo). `random` may use `spellbook` or `union` for archived ablations.
 
 2. Run bracket duels. The logger writes only valid duel decisions and backs each row with the duel outcome.
 

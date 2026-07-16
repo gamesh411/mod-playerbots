@@ -2203,10 +2203,12 @@ AiPlayerbot.MlDuelBracket.Enabled = 0
 # Class:specTab pairs, comma-separated. Default: Arms Warrior versus Frost Mage.
 AiPlayerbot.MlDuelBracket.Pairs = "1:0-8:2"
 AiPlayerbot.MlDuelBracket.LogFile = "ml_decisions_duel_v2.csv"
-# random | softmax-stock | heuristic | ranker. Softmax is introduced by curriculum ticket #9.
+# random | softmax-stock | heuristic | ranker (DEC-018 / DEC-022).
 AiPlayerbot.MlDuelBracket.ActionPolicy = "softmax-stock"
 # queue | spellbook | union. Spellbook/union apply only to ActionPolicy=random.
 AiPlayerbot.MlDuelBracket.SpellPool = "queue"
+# Softmax temperature for ActionPolicy=softmax-stock. Farm default 10; ≤0 ⇒ argmax (demo/freeze).
+AiPlayerbot.MlDuelBracket.SoftmaxTemperature = 10.0
 AiPlayerbot.MlDuelBracket.ParkAlliance = "0,-9104,416,92.5,0.7"
 AiPlayerbot.MlDuelBracket.ParkHorde = "1,1357,-4369,26.5,3.5"
 # 0 derives the class mask from Pairs.
