@@ -64,6 +64,7 @@
 #include "VehicleActions.h"
 #include "WorldBuffAction.h"
 #include "XpGainAction.h"
+#include "MlDuelBracketAction.h"
 #include "NewRpgAction.h"
 #include "NewRpgOutdoorPvP.h"
 #include "FishingAction.h"
@@ -279,6 +280,7 @@ public:
         creators["new rpg travel flight"] = &ActionContext::new_rpg_travel_flight;
         creators["new rpg outdoor pvp"] = &ActionContext::new_rpg_outdoor_pvp;
         creators["wait for attack keep safe distance"] = &ActionContext::wait_for_attack_keep_safe_distance;
+        creators["ml duel bracket"] = &ActionContext::ml_duel_bracket;
     }
 
 private:
@@ -486,6 +488,7 @@ private:
     static Action* new_rpg_travel_flight(PlayerbotAI* ai) { return new NewRpgTravelFlightAction(ai); }
     static Action* new_rpg_outdoor_pvp(PlayerbotAI* ai) { return new NewRpgOutdoorPvpAction(ai); }
     static Action* wait_for_attack_keep_safe_distance(PlayerbotAI* ai) { return new WaitForAttackKeepSafeDistanceAction(ai); }
+    static Action* ml_duel_bracket(PlayerbotAI* ai) { return new MlDuelBracketAction(ai); }
 };
 
 #endif

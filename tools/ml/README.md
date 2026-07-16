@@ -1,28 +1,36 @@
 # Offline ML learning for playerbots
 
+Design tracking: [`docs/ml/README.md`](../../docs/ml/README.md) (directions, decisions, features).
+
 ## Pipeline
 
-1. Enable logging in `playerbots.conf`:
+1. Enable logging in `playerbots.conf` (tournament profile sets these):
 
 ```
 AiPlayerbot.MlLoggingEnabled = 1
-AiPlayerbot.MlLogFile = "ml_decisions.csv"
+AiPlayerbot.MlLogFile = "ml_decisions_v3.csv"
 AiPlayerbot.MlRewardDelayMs = 2000
+AiPlayerbot.MlTerminalLambda = 1.0
+AiPlayerbot.MlExploreEpsilon = 0.08
+AiPlayerbot.MlExploreArenaOnly = 1
 ```
 
 2. Play **PvE and/or PvP**. Logger records combat decisions (meta/navigation pruned).
-   Columns `in_bg` / `in_arena` mark PvP activity zones for split training.
+   Columns `in_bg` / `in_arena` / `match_id` / `terminal` / `explored` support splits and credit assignment.
+   **Rotate the log filename** when columns change (`v2`, `v3`, …).
 
 3. Train (Python + numpy):
 
 ```bash
 cd tools/ml
 # Universal / hybrid (all zones, meta dropped)
-python3 train_ranker.py --csv /path/to/ml_decisions.csv --out hybrid_ranker.pbml
-# PvP activity only
-python3 train_ranker.py --csv /path/to/ml_decisions.csv --out pvp_ranker.pbml --pvp-only
+python train_ranker.py --csv /path/to/ml_decisions.csv --out hybrid_ranker.pbml
+# All PvP (BG + arena)
+python train_ranker.py --csv /path/to/ml_decisions_v3.csv --out pvp_ranker.pbml --pvp-only
+# Rated-arena specialist (unified 2v2+3v3)
+python train_ranker.py --csv /path/to/ml_decisions_v3.csv --out pvp_ranker.pbml --arena-only
 # Open-world / dungeon PvE only
-python3 train_ranker.py --csv /path/to/ml_decisions.csv --out pve_ranker.pbml --pve-only
+python train_ranker.py --csv /path/to/ml_decisions.csv --out pve_ranker.pbml --pve-only
 ```
 
 4. Deploy and blend:
@@ -30,35 +38,11 @@ python3 train_ranker.py --csv /path/to/ml_decisions.csv --out pve_ranker.pbml --
 ```
 AiPlayerbot.MlModelPathHybrid = "/absolute/path/hybrid_ranker.pbml"
 AiPlayerbot.MlModelPathPvp = "/absolute/path/pvp_ranker.pbml"
-AiPlayerbot.MlHybridAlpha = 0.3
-AiPlayerbot.MlPvpAlpha = 0.3
+AiPlayerbot.MlHybridAlpha = 0.15
+AiPlayerbot.MlPvpAlpha = 0.15
 ```
 
-Raise alpha toward `1.0` as metrics improve. `0.0` = heuristics only.
+Raise alpha toward `1.0` only after explore+terminal retrains (see DEC-006). `0.0` = heuristics only.
 
 `--pve-only` models deploy via `MlModelPathHybrid` (open-world/dungeon scorer).
 There is no separate `MlModelPathPve` yet — hybrid is the universal / PvE slot.
-
-## Schema (v2)
-
-| Block | Size | Notes |
-|---|---|---|
-| Features `f0..f11` | 12 | HP, casting, **enemy casting heal (spell-agnostic)**, BG/arena, … |
-| Flags `a0..a7` | 8 | interrupt, healer-focus, defensive, CC, heal, instant, **damage**, **focus player** |
-| Total | **20** | Old 18-D PBML1 still loads (extra flags ignored) |
-
-## Files
-
-| Piece | Role |
-|---|---|
-| `src/Ai/Ml/MlDecisionLogger.*` | Log + delayed rewards (meta pruned; survival rebalanced) |
-| `src/Ai/Ml/CombatDecisionFeatures.*` | Features + action taxonomy |
-| `src/Ai/Ml/MlMlpModel.*` | PBML1 forward pass |
-| `src/Ai/Ml/MlScorer.*` | Blend heuristic ↔ MLP |
-| `train_ranker.py` | Offline SGD (`--pvp-only` / `--pve-only` / meta filter) |
-
-## Notes
-
-- No backprop on the map thread.
-- Unknown/missing model → heuristics only.
-- After logger upgrades, archive old CSV and start a fresh `ml_decisions.csv` (header `a0..a7`).

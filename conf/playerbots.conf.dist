@@ -2214,6 +2214,64 @@ AiPlayerbot.MlLogAllBots = 0
 
 # Output CSV path (relative to cwd / LogsDir typically). Default: ml_decisions.csv
 AiPlayerbot.MlLogFile = "ml_decisions.csv"
+#
+#        Delay before short-horizon reward is computed for a logged action (ms)
+#        Default: 2000
+#
+AiPlayerbot.MlRewardDelayMs = 2000
+#
+#        Weight of match win/loss (+1/-1) added to short reward for BG/arena rows:
+#        reward = short_reward + MlTerminalLambda * terminal
+#        Default: 1.0
+#
+AiPlayerbot.MlTerminalLambda = 1.0
+#
+#        ε-greedy exploration: with this probability, pick a random useful/possible
+#        combat action from the current AI queue instead of the top-relevance one.
+#        Default: 0.0 (off). Tournament profile uses ~0.08.
+#
+AiPlayerbot.MlExploreEpsilon = 0.0
+#
+#        If 1, MlExploreEpsilon only applies while the bot is InArena().
+#        Default: 1
+#
+AiPlayerbot.MlExploreArenaOnly = 1
+#
+# DUEL BRACKET (idle / arena-queue → 1v1 lab; DEC-012 / DEC-013)
+# Enable configurable spec-pair dueling while waiting for arenas.
+# Capitals disallow duels — park pads are outdoors (Elwynn / Durotar).
+# ActionPolicy=random: ignore heuristic picks; uniform among legal combat actions.
+# Default: 0 (off)
+#
+AiPlayerbot.MlDuelBracket.Enabled = 0
+# Pairs: class:specTab-class:specTab (comma-separated). Spec tab = AiFactory::GetPlayerSpecTab.
+# Default Arms Warrior vs Frost Mage:
+AiPlayerbot.MlDuelBracket.Pairs = "1:0-8:2"
+AiPlayerbot.MlDuelBracket.LogFile = "ml_decisions_duel_v2.csv"
+# random | ranker | heuristic  (duels default random — no in-code strategy teacher)
+AiPlayerbot.MlDuelBracket.ActionPolicy = "random"
+# spellbook = all known castable abilities (DEC-014); queue = strategy queue only; union = both
+AiPlayerbot.MlDuelBracket.SpellPool = "spellbook"
+# map,x,y,z[,o]
+AiPlayerbot.MlDuelBracket.ParkAlliance = "0,-9104,416,92.5,0.7"
+AiPlayerbot.MlDuelBracket.ParkHorde = "1,1357,-4369,26.5,3.5"
+# 0 = derive from Pairs (Warrior+Mage = bits for class 1 and 8)
+AiPlayerbot.MlDuelBracket.AllowedClassMask = 0
+AiPlayerbot.MlDuelBracket.MaxMatchRange = 80
+AiPlayerbot.MlDuelBracket.RematchCooldownMs = 8000
+# Win/loss weight on every duel decision: reward = short + TerminalLambda * (±1).
+# Keep >> short shaping (|short|≤2) so winning dominates (DEC-016). Default: 25
+AiPlayerbot.MlDuelBracket.TerminalLambda = 25.0
+#
+#        Blend weight for hybrid MLP vs heuristic (0 = heuristic only)
+#        Default: 0.0
+#
+AiPlayerbot.MlHybridAlpha = 0.0
+#
+#        Blend weight for PvP MLP vs heuristic (0 = heuristic only)
+#        Default: 0.0
+#
+AiPlayerbot.MlPvpAlpha = 0.0
 
 # Milliseconds before reward is computed for a logged action. Default: 2000
 AiPlayerbot.MlRewardDelayMs = 2000

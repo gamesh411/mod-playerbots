@@ -349,8 +349,24 @@ public:
     uint32 mlRewardDelayMs;
     float mlHybridAlpha;   // 0 = heuristic only, 1 = model only
     float mlPvpAlpha;
+    float mlTerminalLambda;  // y = short_reward + lambda * terminal(+1/-1) for arena/BG matches
+    float mlDuelTerminalLambda;  // same for duels; keep >> short so win dominates (DEC-016)
+    float mlExploreEpsilon;  // ε-greedy: probability of picking a random legal combat action
+    bool mlExploreArenaOnly; // if true, exploration only while InArena()
     std::string mlModelPathHybrid;
     std::string mlModelPathPvp;
+
+    // Duel bracket (DEC-012 / DEC-013)
+    bool mlDuelBracketEnabled;
+    std::string mlDuelBracketPairs;           // "1:0-8:2,..." class:tab-class:tab
+    std::string mlDuelBracketLogFile;        // separate duel CSV
+    std::string mlDuelBracketActionPolicy;   // "random" | "ranker" | "heuristic"
+    std::string mlDuelBracketSpellPool;      // "spellbook" | "queue" | "union"
+    std::string mlDuelBracketParkAlliance;   // "map,x,y,z[,o]"
+    std::string mlDuelBracketParkHorde;
+    uint32 mlDuelBracketAllowedClassMask;    // 0 = derive from pairs
+    uint32 mlDuelBracketMaxMatchRange;
+    uint32 mlDuelBracketRematchCooldownMs;
 
     bool summonWhenGroup;
     ShowHideCosmetic randomBotShowHelmet;

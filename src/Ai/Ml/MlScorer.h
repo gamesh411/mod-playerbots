@@ -28,6 +28,8 @@ public:
     float ScorePvp(PlayerbotAI* botAI, Action* action, CombatFeatureVector const& features);
 
     void BuildInput(CombatFeatureVector const& features, std::string const& actionName, float* out) const;
+    void BuildInputForDim(CombatFeatureVector const& features, std::string const& actionName, float* out,
+                          size_t outDim) const;
     float RawToMultiplier(float raw, float lo, float hi) const;
 
 private:

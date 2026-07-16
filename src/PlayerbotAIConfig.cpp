@@ -8,6 +8,7 @@
 #include <iostream>
 #include "BisListMgr.h"
 #include "Config.h"
+#include "MlDuelBracket.h"
 #include "MlScorer.h"
 #include "NewRpgInfo.h"
 #include "PlayerbotDungeonRepository.h"
@@ -454,11 +455,30 @@ bool PlayerbotAIConfig::Initialize()
     mlRewardDelayMs = sConfigMgr->GetOption<uint32>("AiPlayerbot.MlRewardDelayMs", 2000);
     mlHybridAlpha = sConfigMgr->GetOption<float>("AiPlayerbot.MlHybridAlpha", 0.0f);
     mlPvpAlpha = sConfigMgr->GetOption<float>("AiPlayerbot.MlPvpAlpha", 0.0f);
+    mlTerminalLambda = sConfigMgr->GetOption<float>("AiPlayerbot.MlTerminalLambda", 1.0f);
+    mlDuelTerminalLambda = sConfigMgr->GetOption<float>("AiPlayerbot.MlDuelBracket.TerminalLambda", 25.0f);
+    mlExploreEpsilon = sConfigMgr->GetOption<float>("AiPlayerbot.MlExploreEpsilon", 0.0f);
+    mlExploreArenaOnly = sConfigMgr->GetOption<bool>("AiPlayerbot.MlExploreArenaOnly", true);
     mlModelPathHybrid = sConfigMgr->GetOption<std::string>("AiPlayerbot.MlModelPathHybrid", "");
     mlModelPathPvp = sConfigMgr->GetOption<std::string>("AiPlayerbot.MlModelPathPvp", "");
 
+    mlDuelBracketEnabled = sConfigMgr->GetOption<bool>("AiPlayerbot.MlDuelBracket.Enabled", false);
+    mlDuelBracketPairs = sConfigMgr->GetOption<std::string>("AiPlayerbot.MlDuelBracket.Pairs", "1:0-8:2");
+    mlDuelBracketLogFile = sConfigMgr->GetOption<std::string>("AiPlayerbot.MlDuelBracket.LogFile", "ml_decisions_duel_v2.csv");
+    mlDuelBracketActionPolicy = sConfigMgr->GetOption<std::string>("AiPlayerbot.MlDuelBracket.ActionPolicy", "random");
+    mlDuelBracketSpellPool = sConfigMgr->GetOption<std::string>("AiPlayerbot.MlDuelBracket.SpellPool", "spellbook");
+    mlDuelBracketParkAlliance =
+        sConfigMgr->GetOption<std::string>("AiPlayerbot.MlDuelBracket.ParkAlliance", "0,-9104,416,92.5,0.7");
+    mlDuelBracketParkHorde =
+        sConfigMgr->GetOption<std::string>("AiPlayerbot.MlDuelBracket.ParkHorde", "1,1357,-4369,26.5,3.5");
+    mlDuelBracketAllowedClassMask = sConfigMgr->GetOption<uint32>("AiPlayerbot.MlDuelBracket.AllowedClassMask", 0);
+    mlDuelBracketMaxMatchRange = sConfigMgr->GetOption<uint32>("AiPlayerbot.MlDuelBracket.MaxMatchRange", 80);
+    mlDuelBracketRematchCooldownMs = sConfigMgr->GetOption<uint32>("AiPlayerbot.MlDuelBracket.RematchCooldownMs", 8000);
+
     if (mlHybridAlpha > 0.0f || mlPvpAlpha > 0.0f)
         sMlScorer.Reload();
+
+    sMlDuelBracket.LoadFromConfig();
 
     useGroundMountAtMinLevel = sConfigMgr->GetOption<int32>("AiPlayerbot.UseGroundMountAtMinLevel", 20);
     useFastGroundMountAtMinLevel = sConfigMgr->GetOption<int32>("AiPlayerbot.UseFastGroundMountAtMinLevel", 40);

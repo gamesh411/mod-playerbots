@@ -18,6 +18,10 @@ void DuelStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
 
 DuelStrategy::DuelStrategy(PlayerbotAI* botAI) : PassThroughStrategy(botAI) {}
 
-void StartDuelStrategy::InitTriggers(std::vector<TriggerNode*>& /*triggers*/) {}
+void StartDuelStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
+{
+    // Bracket matcher (DEC-012): find configured-spec partners while idle / arena-queued.
+    triggers.push_back(new TriggerNode("ml duel bracket", { NextAction("ml duel bracket", 50.0f) }));
+}
 
 StartDuelStrategy::StartDuelStrategy(PlayerbotAI* botAI) : Strategy(botAI) {}

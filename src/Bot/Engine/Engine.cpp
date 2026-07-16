@@ -11,10 +11,13 @@
 #include "Event.h"
 #include "HeuristicScores.h"
 #include "MlDecisionLogger.h"
+#include "MlDuelSpellPool.h"
 #include "PerfMonitor.h"
+#include "Player.h"
 #include "PlayerbotAIConfig.h"
 #include "Playerbots.h"
 #include "Queue.h"
+#include "Random.h"
 #include "Strategy.h"
 #include "Timer.h"
 
@@ -160,6 +163,39 @@ bool Engine::DoNextAction(Unit* /*unit*/, uint32 /*depth*/, bool minimal)
     ProcessTriggers(minimal);
     PushDefaultActions();
 
+    // DEC-014: in duels, prefer full spellbook pool (emergent learning) over strategy queue.
+    Player* const self = botAI->GetBot();
+    bool const inDuel = self && self->duel && self->duel->Opponent;
+    bool const duelIgnoreHeuristic =
+        inDuel && sPlayerbotAIConfig.mlDuelBracketEnabled &&
+        sPlayerbotAIConfig.mlDuelBracketActionPolicy != "heuristic";
+    std::string const spellPoolMode = sPlayerbotAIConfig.mlDuelBracketSpellPool.empty()
+                                          ? "spellbook"
+                                          : sPlayerbotAIConfig.mlDuelBracketSpellPool;
+
+    if (duelIgnoreHeuristic && (spellPoolMode == "spellbook" || spellPoolMode == "union"))
+    {
+        Unit* duelTarget = self->duel->Opponent;
+        std::vector<MlDuelSpellCandidate> spellCands = MlDuelSpellPool::Collect(botAI, duelTarget);
+        if (!spellCands.empty())
+        {
+            MlDuelSpellCandidate const& pick = spellCands[urand(0, spellCands.size() - 1)];
+            // TODO(D9): ActionPolicy=ranker → score all spellCands in one forward.
+            if (MlDuelSpellPool::Execute(botAI, pick))
+            {
+                LogAction("A:%s - DUEL-SPELLBOOK", pick.actionName.c_str());
+                if (sPlayerbotAIConfig.mlLoggingEnabled)
+                    sMlDecisionLogger.OnActionExecuted(botAI, pick.actionName, 0.0f, 0.0f, true);
+                return true;
+            }
+        }
+        // spellbook-only: skip strategy ranking path for this tick (melee may still come from queue via union)
+        if (spellPoolMode == "spellbook")
+        {
+            // Fall through so "attack duel opponent" / reach still work when no spell is castable.
+        }
+    }
+
     uint32 iterations = 0;
     uint32 iterationsPerTick = queue.Size() * (minimal ? 2 : sPlayerbotAIConfig.iterationsPerTick);
 
@@ -175,15 +211,20 @@ bool Engine::DoNextAction(Unit* /*unit*/, uint32 /*depth*/, bool minimal)
         if (minimal && (relevance < 100))
             continue;
 
-        Event event = basket->getEvent();
-        ActionNode* actionNode = queue.Pop();  // NOTE: Pop() deletes basket
+        // Peek first so ε-greedy can swap to another legal combat action before Pop.
+        ActionNode* actionNode = basket->getAction();
         Action* action = InitializeAction(actionNode);
+        bool explored = false;
 
         if (!action)
         {
-            LogAction("A:%s - UNKNOWN", actionNode->getName().c_str());
+            actionNode = queue.PopBasket(basket);
+            LogAction("A:%s - UNKNOWN", actionNode ? actionNode->getName().c_str() : "?");
+            delete actionNode;
+            continue;
         }
-        else if (action->isUseful())
+
+        if (action->isUseful())
         {
             // Apply multipliers early to avoid unnecessary iterations
             for (Multiplier* multiplier : multipliers)
@@ -200,6 +241,81 @@ bool Engine::DoNextAction(Unit* /*unit*/, uint32 /*depth*/, bool minimal)
 
             if (action->isPossible() && relevance > 0)
             {
+                // Duel policy (DEC-013): strategies only enumerate legal actions; choice ignores heuristic
+                // relevance. random = uniform among useful/possible combat actions; ranker = later (falls
+                // back to random until D9 inference ships). Only ActionPolicy=heuristic keeps strategy picks.
+                Player* bot = botAI->GetBot();
+                bool const inDuel = bot && bot->duel && bot->duel->Opponent;
+                bool const duelIgnoreHeuristic =
+                    inDuel && sPlayerbotAIConfig.mlDuelBracketEnabled &&
+                    sPlayerbotAIConfig.mlDuelBracketActionPolicy != "heuristic";
+
+                auto collectLegalCombat = [&](std::vector<ActionBasket*>& cands) {
+                    for (ActionBasket* b : queue.Baskets())
+                    {
+                        if (!b || !b->getAction())
+                            continue;
+                        Action* candAction = InitializeAction(b->getAction());
+                        if (!candAction || !candAction->isUseful() || !candAction->isPossible())
+                            continue;
+                        if (!CombatDecisionUtil::IsLoggableCombatAction(candAction->getName()))
+                            continue;
+                        cands.push_back(b);
+                    }
+                };
+
+                if (duelIgnoreHeuristic)
+                {
+                    std::vector<ActionBasket*> cands;
+                    collectLegalCombat(cands);
+                    if (!cands.empty())
+                    {
+                        // TODO(D9): ActionPolicy=ranker → score all cands in one forward, pick argmax.
+                        ActionBasket* pick = cands[urand(0, cands.size() - 1)];
+                        explored = true;
+                        basket = pick;
+                        skipPrerequisites = basket->isSkipPrerequisites();
+                        relevance = basket->getRelevance();
+                        actionNode = basket->getAction();
+                        action = InitializeAction(actionNode);
+                        LogAction("A:%s - DUEL-RANDOM", action ? action->getName().c_str() : "?");
+                    }
+                }
+                else
+                {
+                    // Arena/world ε-greedy: with probability ε, pick a random legal combat action.
+                    float const eps = sPlayerbotAIConfig.mlExploreEpsilon;
+                    bool exploreOk = eps > 0.0f && bot &&
+                                     (!sPlayerbotAIConfig.mlExploreArenaOnly || bot->InArena()) &&
+                                     CombatDecisionUtil::IsLoggableCombatAction(action->getName()) &&
+                                     frand(0.0f, 1.0f) < eps;
+                    if (exploreOk)
+                    {
+                        std::vector<ActionBasket*> cands;
+                        collectLegalCombat(cands);
+                        if (cands.size() >= 2)
+                        {
+                            ActionBasket* pick = cands[urand(0, cands.size() - 1)];
+                            explored = true;
+                            if (pick != basket)
+                            {
+                                basket = pick;
+                                skipPrerequisites = basket->isSkipPrerequisites();
+                                relevance = basket->getRelevance();
+                                actionNode = basket->getAction();
+                                action = InitializeAction(actionNode);
+                                LogAction("A:%s - EXPLORE", action ? action->getName().c_str() : "?");
+                            }
+                        }
+                    }
+                }
+
+                Event event = basket->getEvent();
+                actionNode = queue.PopBasket(basket);
+                if (!actionNode)
+                    continue;
+                action = InitializeAction(actionNode);
+
                 if (!skipPrerequisites)
                 {
                     LogAction("A:%s - PREREQ", action->getName().c_str());
@@ -227,7 +343,7 @@ bool Engine::DoNextAction(Unit* /*unit*/, uint32 /*depth*/, bool minimal)
                         {
                             CombatFeatureVector const features = featureValue->Get();
                             float heuristic = HeuristicScores::Hybrid(botAI, action, features);
-                            sMlDecisionLogger.OnActionExecuted(botAI, action->getName(), heuristic, relevance);
+                            sMlDecisionLogger.OnActionExecuted(botAI, action->getName(), heuristic, relevance, explored);
                         }
                     }
                     MultiplyAndPush(actionNode->getContinuers(), relevance, false, event, "cont");
@@ -243,12 +359,16 @@ bool Engine::DoNextAction(Unit* /*unit*/, uint32 /*depth*/, bool minimal)
             }
             else
             {
+                Event event = basket->getEvent();
+                actionNode = queue.PopBasket(basket);
                 LogAction("A:%s - IMPOSSIBLE", action->getName().c_str());
-                MultiplyAndPush(actionNode->getAlternatives(), relevance + 0.003f, false, event, "alt");
+                if (actionNode)
+                    MultiplyAndPush(actionNode->getAlternatives(), relevance + 0.003f, false, event, "alt");
             }
         }
         else
         {
+            actionNode = queue.PopBasket(basket);
             LogAction("A:%s - USELESS", action->getName().c_str());
             lastRelevance = relevance;
         }

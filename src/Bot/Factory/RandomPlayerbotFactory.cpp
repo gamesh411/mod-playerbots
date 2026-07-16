@@ -21,6 +21,7 @@
 #include "SocialMgr.h"
 #include "Timer.h"
 #include "Log.h"
+#include "MlDuelBracket.h"
 
 constexpr RandomPlayerbotFactory::NameRaceAndGender RandomPlayerbotFactory::CombineRaceAndGender(uint8 race,
                                                                                                 uint8 gender)
@@ -429,6 +430,20 @@ uint32 RandomPlayerbotFactory::CalculateTotalAccountCount()
 
 uint32 RandomPlayerbotFactory::CalculateAvailableCharsPerAccount()
 {
+    // Duel bracket (DEC-012): login/create only allow configured classes — typically 2 (e.g. Warrior+Mage).
+    if (sPlayerbotAIConfig.mlDuelBracketEnabled)
+    {
+        uint32 mask = sMlDuelBracket.AllowedClassMask();
+        if (!mask)
+            mask = sPlayerbotAIConfig.mlDuelBracketAllowedClassMask;
+        uint32 allowed = 0;
+        for (uint8 cls = 1; cls < MAX_CLASSES; ++cls)
+            if (mask & (1u << (cls - 1)))
+                ++allowed;
+        if (allowed > 0)
+            return allowed;
+    }
+
     // Death Knight availability according to their login eligibility, and if WotLK is enabled at all.
     bool noDK = sPlayerbotAIConfig.disableDeathKnightLogin || sWorld->getIntConfig(CONFIG_EXPANSION) != EXPANSION_WRATH_OF_THE_LICH_KING;
 
@@ -716,6 +731,10 @@ void RandomPlayerbotFactory::CreateRandomBots()
 
             // skip disabled with config classes
             if ((1 << (cls - 1)) & sWorld->getIntConfig(CONFIG_CHARACTER_CREATING_DISABLED_CLASSMASK))
+                continue;
+
+            // Duel bracket: only create classes present in configured pairs.
+            if (sPlayerbotAIConfig.mlDuelBracketEnabled && !sMlDuelBracket.IsClassAllowed(cls))
                 continue;
 
             Player* playerBot = factory.CreateRandomBot(session, cls, nameCache);

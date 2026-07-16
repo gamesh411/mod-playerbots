@@ -33,6 +33,8 @@ enum ActionFlagIndex : size_t
     AF_COUNT = 8
 };
 
-static constexpr size_t ML_INPUT_DIM = CF_FEATURE_COUNT + AF_COUNT;  // 20
+static constexpr size_t ML_INPUT_DIM = CF_FEATURE_COUNT + AF_COUNT;
+// Legacy PBML1 (pre-duel packs): 12 core features + 8 action flags.
+static constexpr size_t ML_INPUT_DIM_V1 = 12 + AF_COUNT;
 
 #endif

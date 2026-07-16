@@ -33,6 +33,8 @@
 #include "PlayerbotCommandScript.h"
 #include "cmath"
 #include "BattleGroundTactics.h"
+#include "MlDecisionLogger.h"
+#include "MlDuelBracket.h"
 
 class PlayerbotsDatabaseScript : public DatabaseScript
 {
@@ -89,7 +91,9 @@ public:
         PLAYERHOOK_CAN_PLAYER_USE_GUILD_CHAT,
         PLAYERHOOK_CAN_PLAYER_USE_CHANNEL_CHAT,
         PLAYERHOOK_ON_GIVE_EXP,
-        PLAYERHOOK_ON_BEFORE_TELEPORT
+        PLAYERHOOK_ON_BEFORE_TELEPORT,
+        PLAYERHOOK_ON_DUEL_START,
+        PLAYERHOOK_ON_DUEL_END
     }) {}
 
     void OnPlayerLogin(Player* player) override
@@ -164,6 +168,16 @@ public:
         */
 
         return true;
+    }
+
+    void OnPlayerDuelStart(Player* player1, Player* player2) override
+    {
+        sMlDuelBracket.OnDuelStart(player1, player2);
+    }
+
+    void OnPlayerDuelEnd(Player* winner, Player* loser, DuelCompleteType type) override
+    {
+        sMlDuelBracket.OnDuelEnd(winner, loser, type);
     }
 
     void OnPlayerAfterUpdate(Player* player, uint32 diff) override
@@ -513,7 +527,11 @@ public:
         bgStrategies[bg->GetInstanceID()] = data;
     }
 
-    void OnBattlegroundEnd(Battleground* bg, TeamId /*winnerTeam*/) override { bgStrategies.erase(bg->GetInstanceID()); }
+    void OnBattlegroundEnd(Battleground* bg, TeamId winnerTeam) override
+    {
+        sMlDecisionLogger.OnMatchEnd(bg, winnerTeam);
+        bgStrategies.erase(bg->GetInstanceID());
+    }
 };
 
 // Workaround for missing InitEnabledHooksIfNeeded for new BattlefieldScript in ScriptMgr

@@ -7,6 +7,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <vector>
 
 #include "Action.h"
 #include "HeuristicScores.h"
@@ -29,13 +30,37 @@ void MlScorer::Reload()
 
 void MlScorer::BuildInput(CombatFeatureVector const& features, std::string const& actionName, float* out) const
 {
-    for (size_t i = 0; i < CF_FEATURE_COUNT; ++i)
-        out[i] = features[i];
+    BuildInputForDim(features, actionName, out, ML_INPUT_DIM);
+}
 
+void MlScorer::BuildInputForDim(CombatFeatureVector const& features, std::string const& actionName, float* out,
+                                size_t outDim) const
+{
     float flags[AF_COUNT];
     HeuristicScores::FillActionFlags(actionName, flags);
-    for (size_t i = 0; i < AF_COUNT; ++i)
-        out[CF_FEATURE_COUNT + i] = flags[i];
+
+    // Old 20-D PBML1: core[0..11] + action flags. New layout puts flags after all packs.
+    if (outDim == ML_INPUT_DIM_V1)
+    {
+        for (size_t i = 0; i < 12; ++i)
+            out[i] = features[i];
+        for (size_t i = 0; i < AF_COUNT; ++i)
+            out[12 + i] = flags[i];
+        return;
+    }
+
+    for (size_t i = 0; i < outDim; ++i)
+        out[i] = 0.0f;
+
+    size_t nFeat = (std::min)(static_cast<size_t>(CF_FEATURE_COUNT), outDim);
+    for (size_t i = 0; i < nFeat; ++i)
+        out[i] = features[i];
+
+    if (outDim >= CF_FEATURE_COUNT + AF_COUNT)
+    {
+        for (size_t i = 0; i < AF_COUNT; ++i)
+            out[CF_FEATURE_COUNT + i] = flags[i];
+    }
 }
 
 float MlScorer::RawToMultiplier(float raw, float lo, float hi) const
@@ -58,9 +83,13 @@ float MlScorer::ScoreHybrid(PlayerbotAI* botAI, Action* action, CombatFeatureVec
     if (alpha <= 0.0f || !hybridModel.IsLoaded() || !action)
         return heuristic;
 
-    float input[ML_INPUT_DIM];
-    BuildInput(features, action->getName(), input);
-    float raw = hybridModel.Forward(input, ML_INPUT_DIM);
+    size_t dim = hybridModel.InputDim();
+    if (dim != ML_INPUT_DIM && dim != ML_INPUT_DIM_V1)
+        return heuristic;
+
+    std::vector<float> input(dim);
+    BuildInputForDim(features, action->getName(), input.data(), dim);
+    float raw = hybridModel.Forward(input.data(), dim);
     float nn = RawToMultiplier(raw, 0.35f, 1.75f);
     alpha = std::clamp(alpha, 0.0f, 1.0f);
     return (1.0f - alpha) * heuristic + alpha * nn;
@@ -76,9 +105,13 @@ float MlScorer::ScorePvp(PlayerbotAI* botAI, Action* action, CombatFeatureVector
     if (alpha <= 0.0f || !pvpModel.IsLoaded() || !action)
         return heuristic;
 
-    float input[ML_INPUT_DIM];
-    BuildInput(features, action->getName(), input);
-    float raw = pvpModel.Forward(input, ML_INPUT_DIM);
+    size_t dim = pvpModel.InputDim();
+    if (dim != ML_INPUT_DIM && dim != ML_INPUT_DIM_V1)
+        return heuristic;
+
+    std::vector<float> input(dim);
+    BuildInputForDim(features, action->getName(), input.data(), dim);
+    float raw = pvpModel.Forward(input.data(), dim);
     float nn = RawToMultiplier(raw, 0.30f, 1.90f);
     alpha = std::clamp(alpha, 0.0f, 1.0f);
     return (1.0f - alpha) * heuristic + alpha * nn;
