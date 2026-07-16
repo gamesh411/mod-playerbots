@@ -191,3 +191,20 @@ Consequences: …
 **Why:** Cleaner upstream contribution; unused strategies are prior art on archive/WIP branches, not ballast on the curriculum line.  
 **Consequences:** [#14](https://github.com/gamesh411/mod-playerbots/issues/14) must slim/rewrite on import rather than copy wip tip; Mode B/C stays recoverable from `archive/wip/pre-curriculum-2026-07-16` / `wip/duel-farm-uncommitted` if ever revived outside this map.
 
+### DEC-022 — 2026-07-16 — S0 Softmax-stock Engine design
+**Status:** accepted  
+**Context:** [S0 Engine: Softmax over stock scripted combat queue](https://github.com/gamesh411/mod-playerbots/issues/9). Conf defaults already `ActionPolicy=softmax-stock` + `SpellPool=queue`; Engine still only implements `random` / `ranker` over the duel queue shell. Movement stays scripted; later stages leave stock ranking behind.  
+**Decision:** Implement `ActionPolicy=softmax-stock` by extending the **existing duel queue candidate shell** in `Engine::DoNextAction` (same enumerate path as `random` / `ranker`), not a separate pipeline.
+
+| Piece | Rule |
+|-------|------|
+| Softmax support (mask) | Loggable combat ∧ `isUseful` ∧ `isPossible` ∧ post-multiplier relevance > 0 |
+| Logits | Raw **basket relevance** (stock Peek scores); multipliers gate membership only — they do not reweight Softmax |
+| Empty support | Fall through to stock `Peek` (scripted movement / meta) |
+| Temperature | Conf `AiPlayerbot.MlDuelBracket.SoftmaxTemperature`; **farm default τ = 10**; **demo / freeze τ = 0** (argmax over masked logits); τ ≤ 0 ⇒ argmax |
+| Anneal | None in-engine for S0 — switch τ via conf / stage profile |
+| S0 mask philosophy | Keep full stock useful/possible filters; thinning to mechanical-only legality is an S1/S2+ concern |
+
+**Why:** Mild Softmax (τ = 10) on stock ranking bootstraps S1 data near-optimal with light coverage; τ = 0 replays stock for showcase freeze; combat-only mask preserves scripted movement; basket logits avoid baking multiplier scales into explore probs the curriculum will drop.  
+**Consequences:** Execution ticket implements Softmax sample + conf key on `exp/duel-rl-curriculum`. S0 farm vs demo differ by τ only. Duel-throughput maximization for faster CSV collection is a separate ticket (conf and/or Engine), not part of this DEC.
+
