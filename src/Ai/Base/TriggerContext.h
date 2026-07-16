@@ -14,6 +14,7 @@
 #include "HealthTriggers.h"
 #include "LfgTriggers.h"
 #include "LootTriggers.h"
+#include "MlDuelBracketTrigger.h"
 #include "NamedObjectContext.h"
 #include "NewRpgStrategy.h"
 #include "NewRpgTriggers.h"
@@ -247,6 +248,7 @@ public:
         creators["can use fishing bobber"] = &TriggerContext::can_use_fishing_bobber;
         creators["new pet"] = &TriggerContext::new_pet;
         creators["wait for attack safe distance"] = &TriggerContext::wait_for_attack_safe_distance;
+        creators["ml duel bracket"] = &TriggerContext::ml_duel_bracket;
     }
 
 private:
@@ -461,6 +463,7 @@ private:
     static Trigger* can_use_fishing_bobber(PlayerbotAI* ai) { return new CanUseFishingBobberTrigger(ai); }
     static Trigger* new_pet(PlayerbotAI* ai) { return new NewPetTrigger(ai); }
     static Trigger* wait_for_attack_safe_distance(PlayerbotAI* ai) { return new WaitForAttackSafeDistanceTrigger(ai); }
+    static Trigger* ml_duel_bracket(PlayerbotAI* ai) { return new MlDuelBracketTrigger(ai); }
 };
 
 #endif

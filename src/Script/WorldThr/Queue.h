@@ -7,6 +7,8 @@
 #ifndef PLAYERBOTS_QUEUE_H
 #define PLAYERBOTS_QUEUE_H
 
+#include <vector>
+
 #include "Action.h"
 #include "Common.h"
 
@@ -43,10 +45,21 @@ public:
     ActionNode* Pop();
 
     /**
+     * @brief Removes and returns the ActionNode from a specific basket
+     * @return Pointer to ActionNode, or nullptr if basket is not in the queue
+     */
+    ActionNode* PopBasket(ActionBasket* basket);
+
+    /**
      * @brief Returns the action with highest relevance without removing it
      * @return Pointer to the ActionBasket with highest relevance, or nullptr if queue is empty
      */
     ActionBasket* Peek();
+
+    /**
+     * @brief Snapshot of current baskets (pointers remain owned by the queue)
+     */
+    std::vector<ActionBasket*> Baskets() const;
 
     /**
      * @brief Returns the current size of the queue

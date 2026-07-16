@@ -6,12 +6,20 @@
 
 #include "Engine.h"
 #include "Action.h"
+#include "CombatDecisionFeatures.h"
 #include "Event.h"
+#include "MlDecisionLogger.h"
+#include "MlDuelSpellPool.h"
+#include "MlScorer.h"
 #include "PerfMonitor.h"
+#include "Player.h"
+#include "PlayerbotAIConfig.h"
 #include "Playerbots.h"
 #include "Queue.h"
+#include "Random.h"
 #include "Strategy.h"
 #include "Timer.h"
+#include <limits>
 
 Engine::Engine(PlayerbotAI* botAI, AiObjectContext* factory) : PlayerbotAIAware(botAI), aiObjectContext(factory)
 {
@@ -155,6 +163,28 @@ bool Engine::DoNextAction(Unit* /*unit*/, uint32 /*depth*/, bool minimal)
     ProcessTriggers(minimal);
     PushDefaultActions();
 
+    Player* const self = botAI->GetBot();
+    bool const inDuel = self && self->duel && self->duel->Opponent;
+    std::string const& policy = sPlayerbotAIConfig.mlDuelBracketActionPolicy;
+    std::string const& spellPool = sPlayerbotAIConfig.mlDuelBracketSpellPool;
+    bool const useSpellbookPool = inDuel && sPlayerbotAIConfig.mlDuelBracketEnabled && policy == "random" &&
+                                  (spellPool == "spellbook" || spellPool == "union");
+    if (useSpellbookPool)
+    {
+        std::vector<MlDuelSpellCandidate> candidates = MlDuelSpellPool::Collect(botAI, self->duel->Opponent);
+        if (!candidates.empty())
+        {
+            MlDuelSpellCandidate const& pick = candidates[urand(0, candidates.size() - 1)];
+            if (MlDuelSpellPool::Execute(botAI, pick))
+            {
+                LogAction("A:%s - DUEL-SPELLBOOK", pick.actionName.c_str());
+                if (sPlayerbotAIConfig.mlLoggingEnabled)
+                    sMlDecisionLogger.OnActionExecuted(botAI, pick.actionName, 0.0f, 0.0f);
+                return true;
+            }
+        }
+    }
+
     uint32 iterations = 0;
     uint32 iterationsPerTick = queue.Size() * (minimal ? 2 : sPlayerbotAIConfig.iterationsPerTick);
 
@@ -170,15 +200,62 @@ bool Engine::DoNextAction(Unit* /*unit*/, uint32 /*depth*/, bool minimal)
         if (minimal && (relevance < 100))
             continue;
 
-        Event event = basket->getEvent();
-        ActionNode* actionNode = queue.Pop();  // NOTE: Pop() deletes basket
+        ActionNode* actionNode = basket->getAction();
         Action* action = InitializeAction(actionNode);
 
         if (!action)
         {
-            LogAction("A:%s - UNKNOWN", actionNode->getName().c_str());
+            actionNode = queue.PopBasket(basket);
+            LogAction("A:%s - UNKNOWN", actionNode ? actionNode->getName().c_str() : "?");
+            delete actionNode;
+            continue;
         }
-        else if (action->isUseful())
+
+        bool const duelPolicy = inDuel && sPlayerbotAIConfig.mlDuelBracketEnabled;
+        if (duelPolicy && (policy == "random" || (policy == "ranker" && sMlScorer.ModelLoaded())))
+        {
+            std::vector<ActionBasket*> candidates;
+            for (ActionBasket* candidate : queue.Baskets())
+            {
+                if (!candidate || !candidate->getAction())
+                    continue;
+
+                Action* candidateAction = InitializeAction(candidate->getAction());
+                if (!candidateAction || !candidateAction->isUseful() || !candidateAction->isPossible() ||
+                    !CombatDecisionUtil::IsLoggableCombatAction(candidateAction->getName()))
+                    continue;
+                candidates.push_back(candidate);
+            }
+
+            if (!candidates.empty())
+            {
+                ActionBasket* selected = candidates[urand(0, candidates.size() - 1)];
+                if (policy == "ranker")
+                {
+                    AiObjectContext* context = aiObjectContext;
+                    CombatFeatureVector const features = AI_VALUE(CombatFeatureVector, "combat decision features");
+                    float bestScore = -std::numeric_limits<float>::infinity();
+                    for (ActionBasket* candidate : candidates)
+                    {
+                        Action* candidateAction = InitializeAction(candidate->getAction());
+                        float const score = sMlScorer.ScoreDuel(botAI, candidateAction, features);
+                        if (score > bestScore)
+                        {
+                            bestScore = score;
+                            selected = candidate;
+                        }
+                    }
+                }
+
+                basket = selected;
+                relevance = basket->getRelevance();
+                skipPrerequisites = basket->isSkipPrerequisites();
+                actionNode = basket->getAction();
+                action = InitializeAction(actionNode);
+            }
+        }
+
+        if (action->isUseful())
         {
             // Apply multipliers early to avoid unnecessary iterations
             for (Multiplier* multiplier : multipliers)
@@ -195,6 +272,56 @@ bool Engine::DoNextAction(Unit* /*unit*/, uint32 /*depth*/, bool minimal)
 
             if (action->isPossible() && relevance > 0)
             {
+                if (duelPolicy && (policy == "random" || (policy == "ranker" && sMlScorer.ModelLoaded())))
+                {
+                    std::vector<ActionBasket*> candidates;
+                    for (ActionBasket* candidate : queue.Baskets())
+                    {
+                        if (!candidate || !candidate->getAction())
+                            continue;
+
+                        Action* candidateAction = InitializeAction(candidate->getAction());
+                        if (!candidateAction || !candidateAction->isUseful() || !candidateAction->isPossible() ||
+                            !CombatDecisionUtil::IsLoggableCombatAction(candidateAction->getName()))
+                            continue;
+                        candidates.push_back(candidate);
+                    }
+
+                    if (!candidates.empty())
+                    {
+                        ActionBasket* selected = candidates[urand(0, candidates.size() - 1)];
+                        if (policy == "ranker")
+                        {
+                            AiObjectContext* context = aiObjectContext;
+                            CombatFeatureVector const features =
+                                AI_VALUE(CombatFeatureVector, "combat decision features");
+                            float bestScore = -std::numeric_limits<float>::infinity();
+                            for (ActionBasket* candidate : candidates)
+                            {
+                                Action* candidateAction = InitializeAction(candidate->getAction());
+                                float const score = sMlScorer.ScoreDuel(botAI, candidateAction, features);
+                                if (score > bestScore)
+                                {
+                                    bestScore = score;
+                                    selected = candidate;
+                                }
+                            }
+                        }
+
+                        basket = selected;
+                        relevance = basket->getRelevance();
+                        skipPrerequisites = basket->isSkipPrerequisites();
+                        actionNode = basket->getAction();
+                        action = InitializeAction(actionNode);
+                    }
+                }
+
+                Event event = basket->getEvent();
+                actionNode = queue.PopBasket(basket);
+                if (!actionNode)
+                    continue;
+                action = InitializeAction(actionNode);
+
                 if (!skipPrerequisites)
                 {
                     LogAction("A:%s - PREREQ", action->getName().c_str());
@@ -214,6 +341,8 @@ bool Engine::DoNextAction(Unit* /*unit*/, uint32 /*depth*/, bool minimal)
                 if (actionExecuted)
                 {
                     LogAction("A:%s - OK", action->getName().c_str());
+                    if (sPlayerbotAIConfig.mlLoggingEnabled)
+                        sMlDecisionLogger.OnActionExecuted(botAI, action->getName(), 0.0f, relevance);
                     MultiplyAndPush(actionNode->getContinuers(), relevance, false, event, "cont");
                     lastRelevance = relevance;
                     delete actionNode;  // Safe memory management
@@ -223,21 +352,29 @@ bool Engine::DoNextAction(Unit* /*unit*/, uint32 /*depth*/, bool minimal)
                 {
                     LogAction("A:%s - FAILED", action->getName().c_str());
                     MultiplyAndPush(actionNode->getAlternatives(), relevance + 0.003f, false, event, "alt");
+                    delete actionNode;
                 }
             }
             else
             {
+                Event event = basket->getEvent();
+                actionNode = queue.PopBasket(basket);
                 LogAction("A:%s - IMPOSSIBLE", action->getName().c_str());
-                MultiplyAndPush(actionNode->getAlternatives(), relevance + 0.003f, false, event, "alt");
+                if (actionNode)
+                {
+                    MultiplyAndPush(actionNode->getAlternatives(), relevance + 0.003f, false, event, "alt");
+                    delete actionNode;
+                }
             }
         }
         else
         {
+            actionNode = queue.PopBasket(basket);
             LogAction("A:%s - USELESS", action->getName().c_str());
             lastRelevance = relevance;
+            delete actionNode;
         }
 
-        delete actionNode;  // Always delete after processing the action node
     }
 
     if (time(nullptr) - currentTime > 1)

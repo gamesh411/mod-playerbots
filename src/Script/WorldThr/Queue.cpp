@@ -38,9 +38,28 @@ ActionNode* Queue::Pop()
     return extractAndDeleteBasket(highestRelevanceBasket);
 }
 
+ActionNode* Queue::PopBasket(ActionBasket* basket)
+{
+    if (!basket)
+        return nullptr;
+
+    for (ActionBasket* b : actions)
+    {
+        if (b == basket)
+            return extractAndDeleteBasket(basket);
+    }
+
+    return nullptr;
+}
+
 ActionBasket* Queue::Peek()
 {
     return findHighestRelevanceBasket();
+}
+
+std::vector<ActionBasket*> Queue::Baskets() const
+{
+    return std::vector<ActionBasket*>(actions.begin(), actions.end());
 }
 
 uint32 Queue::Size()

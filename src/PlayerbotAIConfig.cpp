@@ -7,6 +7,8 @@
 #include "PlayerbotAIConfig.h"
 #include "BisListMgr.h"
 #include "Config.h"
+#include "MlDuelBracket.h"
+#include "MlScorer.h"
 #include "NewRpgInfo.h"
 #include "PlayerbotDungeonRepository.h"
 #include "PlayerbotFactory.h"
@@ -465,6 +467,30 @@ bool PlayerbotAIConfig::Initialize()
 
     commandServerPort = sConfigMgr->GetOption<int32>("AiPlayerbot.CommandServerPort", 8888);
     perfMonEnabled = sConfigMgr->GetOption<bool>("AiPlayerbot.PerfMonEnabled", false);
+
+    mlLoggingEnabled = sConfigMgr->GetOption<bool>("AiPlayerbot.MlLoggingEnabled", false);
+    mlRewardDelayMs = sConfigMgr->GetOption<uint32>("AiPlayerbot.MlRewardDelayMs", 2000);
+    mlDuelTerminalLambda = sConfigMgr->GetOption<float>("AiPlayerbot.MlDuelBracket.TerminalLambda", 25.0f);
+    mlModelPathDuel = sConfigMgr->GetOption<std::string>("AiPlayerbot.MlModelPathDuel", "");
+
+    mlDuelBracketEnabled = sConfigMgr->GetOption<bool>("AiPlayerbot.MlDuelBracket.Enabled", false);
+    mlDuelBracketPairs = sConfigMgr->GetOption<std::string>("AiPlayerbot.MlDuelBracket.Pairs", "1:0-8:2");
+    mlDuelBracketLogFile =
+        sConfigMgr->GetOption<std::string>("AiPlayerbot.MlDuelBracket.LogFile", "ml_decisions_duel_v2.csv");
+    mlDuelBracketActionPolicy =
+        sConfigMgr->GetOption<std::string>("AiPlayerbot.MlDuelBracket.ActionPolicy", "softmax-stock");
+    mlDuelBracketSpellPool = sConfigMgr->GetOption<std::string>("AiPlayerbot.MlDuelBracket.SpellPool", "queue");
+    mlDuelBracketParkAlliance =
+        sConfigMgr->GetOption<std::string>("AiPlayerbot.MlDuelBracket.ParkAlliance", "0,-9104,416,92.5,0.7");
+    mlDuelBracketParkHorde =
+        sConfigMgr->GetOption<std::string>("AiPlayerbot.MlDuelBracket.ParkHorde", "1,1357,-4369,26.5,3.5");
+    mlDuelBracketAllowedClassMask = sConfigMgr->GetOption<uint32>("AiPlayerbot.MlDuelBracket.AllowedClassMask", 0);
+    mlDuelBracketMaxMatchRange = sConfigMgr->GetOption<uint32>("AiPlayerbot.MlDuelBracket.MaxMatchRange", 80);
+    mlDuelBracketRematchCooldownMs =
+        sConfigMgr->GetOption<uint32>("AiPlayerbot.MlDuelBracket.RematchCooldownMs", 8000);
+    sMlDuelBracket.LoadFromConfig();
+    if (!mlModelPathDuel.empty())
+        sMlScorer.Reload();
 
     useGroundMountAtMinLevel = sConfigMgr->GetOption<int32>("AiPlayerbot.UseGroundMountAtMinLevel", 20);
     useFastGroundMountAtMinLevel = sConfigMgr->GetOption<int32>("AiPlayerbot.UseFastGroundMountAtMinLevel", 40);

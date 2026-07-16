@@ -2519,6 +2519,37 @@ AiPlayerbot.TellWhenAvoidAoe = 0
 AiPlayerbot.PerfMonEnabled = 0
 
 #
+# CURRICULUM DUEL LEARNING (DEC-018 / DEC-021)
+#
+# Logs only decisions made while a bot is in a configured 1v1 duel bracket.
+# Default: 0 (disabled)
+AiPlayerbot.MlLoggingEnabled = 0
+
+# Delay before computing the short-horizon reward (ms).
+AiPlayerbot.MlRewardDelayMs = 2000
+
+# PBML1 duel ranker path. Empty keeps stock relevance ordering.
+AiPlayerbot.MlModelPathDuel = ""
+
+# Enable the idle random-bot duel bracket.
+AiPlayerbot.MlDuelBracket.Enabled = 0
+# Class:specTab pairs, comma-separated. Default: Arms Warrior versus Frost Mage.
+AiPlayerbot.MlDuelBracket.Pairs = "1:0-8:2"
+AiPlayerbot.MlDuelBracket.LogFile = "ml_decisions_duel_v2.csv"
+# random | softmax-stock | heuristic | ranker. Softmax is introduced by curriculum ticket #9.
+AiPlayerbot.MlDuelBracket.ActionPolicy = "softmax-stock"
+# queue | spellbook | union. Spellbook/union apply only to ActionPolicy=random.
+AiPlayerbot.MlDuelBracket.SpellPool = "queue"
+AiPlayerbot.MlDuelBracket.ParkAlliance = "0,-9104,416,92.5,0.7"
+AiPlayerbot.MlDuelBracket.ParkHorde = "1,1357,-4369,26.5,3.5"
+# 0 derives the class mask from Pairs.
+AiPlayerbot.MlDuelBracket.AllowedClassMask = 0
+AiPlayerbot.MlDuelBracket.MaxMatchRange = 80
+AiPlayerbot.MlDuelBracket.RematchCooldownMs = 8000
+# reward = short_reward + TerminalLambda * terminal; keep terminal dominant.
+AiPlayerbot.MlDuelBracket.TerminalLambda = 25.0
+
+#
 #
 ####################################################################################################
 
