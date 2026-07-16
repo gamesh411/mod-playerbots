@@ -1,6 +1,6 @@
 # Stage S0 — Softmax over stock scripted queue
 
-> Design locked in **DEC-022** / [#9](https://github.com/gamesh411/mod-playerbots/issues/9). Freeze fields (artifact paths / git tag) per [#8](https://github.com/gamesh411/mod-playerbots/issues/8) when stage freezes. Engine implementation: follow-on execute ticket on map [#4](https://github.com/gamesh411/mod-playerbots/issues/4).
+> Design locked in **DEC-022** / [#9](https://github.com/gamesh411/mod-playerbots/issues/9). Engine path landed via [#15](https://github.com/gamesh411/mod-playerbots/issues/15). Freeze fields (artifact paths / git tag) per [#8](https://github.com/gamesh411/mod-playerbots/issues/8) when stage freezes.
 
 | Field | Value |
 |-------|--------|
