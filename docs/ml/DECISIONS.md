@@ -208,3 +208,21 @@ Consequences: …
 **Why:** Mild Softmax (τ = 10) on stock ranking bootstraps S1 data near-optimal with light coverage; τ = 0 replays stock for showcase freeze; combat-only mask preserves scripted movement; basket logits avoid baking multiplier scales into explore probs the curriculum will drop.  
 **Consequences:** Execution ticket implements Softmax sample + conf key on `exp/duel-rl-curriculum`. S0 farm vs demo differ by τ only. Duel-throughput maximization for faster CSV collection is a separate ticket (conf and/or Engine), not part of this DEC.
 
+### DEC-023 — 2026-07-16 — Duel-only farm throughput + full-resource start gate
+**Status:** accepted  
+**Context:** [Maximize duel farm throughput for training](https://github.com/gamesh411/mod-playerbots/issues/16). Need max Arms↔Frost matches/hour for S0–S2 CSV without breaking DEC-022 Softmax-stock or scripted movement; user requires a server mode with **no other bot activity**, full HP + non-rage resources before start, and major-CD start state observed but not used as a match gate.  
+**Decision:**
+
+| Piece | Rule |
+|-------|------|
+| Server profile | New orchestrator profile **`duel-farm`** (`wotlk-playerbots-server`): **no** BG/arena auto-join, **no** RPG/grind, **no** capital banker tele; idle random bots only run `MlDuelBracket` at parks. Orthogonal to `-ProfileGB`. |
+| Population | Level-80 fixed; class mask from `Pairs` (default Arms↔Frost); `MinRandomBots`=`MaxRandomBots` at hardware max (same scale as arena-tournament). Curriculum conf: `ActionPolicy=softmax-stock`, `SpellPool=queue`, farm `SoftmaxTemperature=10`. |
+| Match hard gate | Both bots: **100% health** and **full non-rage power** (Mana / Energy / Runic Power / Focus when that is their power type). **Rage is not gated** (Warriors start/spend rage in combat). Alive, not in combat/duel/BG/arena. |
+| Major CDs | **Not** a start gate — bots with full vs depleted major CDs may pair. **Observe** start state via existing DuelCD feature pack (DEC-017) plus a duel-start snapshot on the logger (per-bot major-CD readiness summary at `OnDuelStart` / first logged decision). |
+| Throughput under gate | When bracket-idle at park: **instant restore** HP + non-rage powers (and clear eat/drink), then rematch. `RematchCooldownMs` is only a short post-duel debounce (farm profile **500** ms; not the resource wait). Do **not** wait on natural regen/drink. |
+| Accept path | `AcceptDuelAction` (and bracket `IsIdleEligible`) use the same full-resource hard gate when `MlDuelBracket` is enabled so request/accept cannot race below full. |
+| Softmax / movement | Unchanged (DEC-022). No ML movement. |
+
+**Why:** Isolating duel-farm removes arena/BG concurrency theft; instant park restore + short debounce maximizes matches/hour while keeping every episode’s start resources comparable; logging major-CD readiness without gating preserves natural CD-desync coverage for the ranker.  
+**Consequences:** Execute follow-on lands Engine restore/gate + logger snapshot on `exp/duel-rl-curriculum`, and `duel-farm` in `wotlk-playerbots-server` (`Get-ServerProfiles` / `Apply-MlDuelBracket` / ensure_running). Stage-replay profiles (#13) stay separate from this farm mode.
+
