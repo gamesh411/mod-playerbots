@@ -38,6 +38,7 @@
 #include "PlayerbotTextMgr.h"
 #include "Playerbots.h"
 #include "Position.h"
+#include "MlDuelBracket.h"
 #include "RaceMgr.h"
 #include "Random.h"
 #include "RandomPlayerbotFactory.h"
@@ -740,7 +741,8 @@ uint32 RandomPlayerbotMgr::AddRandomBots()
                 GetEventValue(charInfo.guid, "logout") ||
                 GetPlayerBot(charInfo.guid) ||
                 std::find(currentBots.begin(), currentBots.end(), charInfo.guid) != currentBots.end() ||
-                (sPlayerbotAIConfig.disableDeathKnightLogin && charInfo.rClass == CLASS_DEATH_KNIGHT))
+                (sPlayerbotAIConfig.disableDeathKnightLogin && charInfo.rClass == CLASS_DEATH_KNIGHT) ||
+                (sPlayerbotAIConfig.mlDuelBracketEnabled && !sMlDuelBracket.IsClassAllowed(charInfo.rClass)))
             {
                 return false;
             }

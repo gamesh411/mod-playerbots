@@ -336,6 +336,24 @@ public:
 
     uint32 commandServerPort;
     bool perfMonEnabled;
+
+    // Curriculum duel ML (DEC-021)
+    bool mlLoggingEnabled;
+    uint32 mlRewardDelayMs;
+    float mlDuelTerminalLambda;
+    std::string mlModelPathDuel;
+
+    bool mlDuelBracketEnabled;
+    std::string mlDuelBracketPairs;
+    std::string mlDuelBracketLogFile;
+    std::string mlDuelBracketActionPolicy;
+    std::string mlDuelBracketSpellPool;
+    std::string mlDuelBracketParkAlliance;
+    std::string mlDuelBracketParkHorde;
+    uint32 mlDuelBracketAllowedClassMask;
+    uint32 mlDuelBracketMaxMatchRange;
+    uint32 mlDuelBracketRematchCooldownMs;
+
     bool summonWhenGroup;
     ShowHideCosmetic randomBotShowHelmet;
     ShowHideCosmetic randomBotShowCloak;

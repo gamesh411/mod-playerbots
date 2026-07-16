@@ -593,8 +593,8 @@ void AiFactory::AddDefaultNonCombatStrategies(Player* player, PlayerbotAI* const
     {
         Player* master = facade->GetMaster();
 
-        // let 25% of free bots start duels.
-        if (!urand(0, 3))
+        // The curriculum bracket needs every eligible random bot available to match.
+        if (sPlayerbotAIConfig.mlDuelBracketEnabled || !urand(0, 3))
             nonCombatEngine->addStrategy("start duel", false);
 
         if (sPlayerbotAIConfig.randomBotJoinLfg)

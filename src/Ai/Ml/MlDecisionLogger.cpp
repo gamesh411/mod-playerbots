@@ -1,0 +1,275 @@
+/*
+ * Copyright (C) 2016+ AzerothCore <www.azerothcore.org>, released under GNU AGPL v3 license, you may redistribute it
+ * and/or modify it under version 3 of the License, or (at your option) any later version.
+ */
+
+#include "MlDecisionLogger.h"
+
+#include <fstream>
+#include <limits>
+
+#include "HeuristicScores.h"
+#include "Player.h"
+#include "PlayerbotAI.h"
+#include "PlayerbotAIConfig.h"
+#include "Playerbots.h"
+#include "Timer.h"
+
+MlDecisionLogger& MlDecisionLogger::instance()
+{
+    static MlDecisionLogger inst;
+    return inst;
+}
+
+void MlDecisionLogger::OnActionExecuted(PlayerbotAI* botAI, std::string const& actionName, float heuristicScore,
+                                        float finalScore)
+{
+    if (!sPlayerbotAIConfig.mlLoggingEnabled || !botAI)
+        return;
+
+    Player* bot = botAI->GetBot();
+    if (!bot || !bot->IsInWorld() || !bot->duel || !bot->duel->Opponent)
+        return;
+
+    if (actionName.empty() || CombatDecisionUtil::IsMetaAction(actionName))
+        return;
+
+    AiObjectContext* context = botAI->GetAiObjectContext();
+    if (!context)
+        return;
+
+    MlPendingDecision d;
+    d.episodeId = nextEpisodeId++;
+    d.botGuid = bot->GetGUID();
+    d.logTimeMs = getMSTime();
+    d.resolveAtMs = d.logTimeMs + sPlayerbotAIConfig.mlRewardDelayMs;
+    d.features = AI_VALUE(CombatFeatureVector, "combat decision features");
+    d.actionName = actionName;
+    d.heuristicScore = heuristicScore;
+    d.finalScore = finalScore;
+    d.targetHpAtLog = static_cast<uint8>(d.features[CF_TARGET_HEALTH] * 100.0f);
+    d.targetWasCasting = d.features[CF_TARGET_IS_CASTING] > 0.5f;
+    d.wasInterruptAction = CombatDecisionUtil::IsInterruptAction(actionName);
+
+    std::lock_guard<std::mutex> lock(mtx);
+    auto it = duelMatchByGuid.find(d.botGuid.GetCounter());
+    if (it != duelMatchByGuid.end())
+        d.matchId = it->second;
+
+    while (pending.size() > 5000)
+        pending.pop_front();
+    pending.push_back(std::move(d));
+}
+
+float MlDecisionLogger::ComputeReward(PlayerbotAI* botAI, MlPendingDecision const& d) const
+{
+    Player* bot = botAI->GetBot();
+    if (!bot || !bot->IsAlive())
+        return 0.0f;
+
+    Unit* foe = bot->duel && bot->duel->Opponent ? bot->duel->Opponent : nullptr;
+    uint8 foeHpNow = foe && foe->IsAlive() ? static_cast<uint8>(foe->GetHealthPct()) : 0;
+    float reward = 0.0f;
+    if (foe && foe->IsAlive() && foeHpNow + 10 < d.targetHpAtLog)
+        reward += 0.5f;
+    if (foe && !foe->IsAlive())
+        reward += 1.0f;
+    if (d.wasInterruptAction && d.targetWasCasting)
+    {
+        bool stillCasting = foe && foe->IsNonMeleeSpellCast(false);
+        reward += stillCasting ? -0.25f : 0.75f;
+    }
+
+    if (reward > 2.0f)
+        reward = 2.0f;
+    if (reward < -2.0f)
+        reward = -2.0f;
+    return reward;
+}
+
+void MlDecisionLogger::WriteRow(MlPendingDecision const& d, float reward, float terminal)
+{
+    std::string const& path = sPlayerbotAIConfig.mlDuelBracketLogFile;
+    if (path.empty())
+        return;
+
+    float flags[AF_COUNT];
+    HeuristicScores::FillActionFlags(d.actionName, flags);
+
+    std::string action = d.actionName;
+    for (char& c : action)
+        if (c == ',')
+            c = ';';
+
+    std::lock_guard<std::mutex> fileLock(sPlayerbotAIConfig.m_logMtx);
+    std::ofstream out(path.c_str(), std::ios::app);
+    if (!out)
+        return;
+
+    if (!headerWritten)
+    {
+        std::ifstream probe(path.c_str(), std::ios::binary | std::ios::ate);
+        bool const fileHasContent = probe.good() && probe.tellg() > 0;
+        if (!fileHasContent)
+        {
+            out << "episode_id,match_id,bot_guid,time_ms,action,reward,short_reward,terminal,heuristic,final_score,in_duel";
+            for (size_t i = 0; i < CF_FEATURE_COUNT; ++i)
+                out << ",f" << i;
+            for (size_t i = 0; i < AF_COUNT; ++i)
+                out << ",a" << i;
+            out << "\n";
+        }
+        headerWritten = true;
+    }
+
+    out << d.episodeId << "," << d.matchId << "," << d.botGuid.GetCounter() << "," << d.logTimeMs << "," << action << ","
+        << reward << "," << d.shortReward << "," << terminal << "," << d.heuristicScore << "," << d.finalScore << ",1";
+    for (size_t i = 0; i < CF_FEATURE_COUNT; ++i)
+        out << "," << d.features[i];
+    for (size_t i = 0; i < AF_COUNT; ++i)
+        out << "," << flags[i];
+    out << "\n";
+}
+
+void MlDecisionLogger::Update(PlayerbotAI* botAI)
+{
+    if (!sPlayerbotAIConfig.mlLoggingEnabled || !botAI)
+        return;
+
+    Player* bot = botAI->GetBot();
+    if (!bot)
+        return;
+
+    uint32 now = getMSTime();
+    std::vector<MlPendingDecision> due;
+    {
+        std::lock_guard<std::mutex> lock(mtx);
+        for (auto it = pending.begin(); it != pending.end();)
+        {
+            if (it->botGuid != bot->GetGUID() || now < it->resolveAtMs)
+            {
+                ++it;
+                continue;
+            }
+            due.push_back(*it);
+            it = pending.erase(it);
+        }
+    }
+
+    for (MlPendingDecision& d : due)
+    {
+        d.shortReward = ComputeReward(botAI, d);
+        d.shortResolved = true;
+        std::lock_guard<std::mutex> lock(mtx);
+        if (d.matchId == 0)
+        {
+            auto it = duelMatchByGuid.find(d.botGuid.GetCounter());
+            if (it != duelMatchByGuid.end())
+                d.matchId = it->second;
+        }
+        if (d.matchId == 0)
+        {
+            d.resolveAtMs = std::numeric_limits<uint32>::max();
+            pending.push_back(std::move(d));
+            continue;
+        }
+        matchBuffer[d.matchId].push_back(std::move(d));
+    }
+}
+
+void MlDecisionLogger::FlushMatchDecisions(uint32 matchId, ObjectGuid botGuid, float terminal)
+{
+    std::vector<MlPendingDecision> rows;
+    {
+        std::lock_guard<std::mutex> lock(mtx);
+        auto it = matchBuffer.find(matchId);
+        if (it != matchBuffer.end())
+        {
+            std::vector<MlPendingDecision> keep;
+            for (MlPendingDecision& d : it->second)
+            {
+                if (d.botGuid == botGuid)
+                    rows.push_back(std::move(d));
+                else
+                    keep.push_back(std::move(d));
+            }
+            if (keep.empty())
+                matchBuffer.erase(it);
+            else
+                it->second.swap(keep);
+        }
+
+        for (auto it = pending.begin(); it != pending.end();)
+        {
+            if (it->botGuid == botGuid && it->matchId == matchId)
+            {
+                rows.push_back(*it);
+                it = pending.erase(it);
+            }
+            else
+                ++it;
+        }
+    }
+
+    for (MlPendingDecision& d : rows)
+    {
+        if (!d.shortResolved)
+            d.shortResolved = true;
+        WriteRow(d, d.shortReward + sPlayerbotAIConfig.mlDuelTerminalLambda * terminal, terminal);
+    }
+}
+
+void MlDecisionLogger::FlushEpisode(Player* bot, float terminal)
+{
+    if (!sPlayerbotAIConfig.mlLoggingEnabled || !bot)
+        return;
+
+    std::vector<MlPendingDecision> rows;
+    {
+        std::lock_guard<std::mutex> lock(mtx);
+        for (auto it = pending.begin(); it != pending.end();)
+        {
+            if (it->botGuid == bot->GetGUID())
+            {
+                rows.push_back(*it);
+                it = pending.erase(it);
+            }
+            else
+                ++it;
+        }
+    }
+
+    for (MlPendingDecision& d : rows)
+        WriteRow(d, d.shortReward + sPlayerbotAIConfig.mlDuelTerminalLambda * terminal, terminal);
+}
+
+void MlDecisionLogger::RegisterDuelMatch(ObjectGuid a, ObjectGuid b, uint32 matchId)
+{
+    std::lock_guard<std::mutex> lock(mtx);
+    duelMatchByGuid[a.GetCounter()] = matchId;
+    duelMatchByGuid[b.GetCounter()] = matchId;
+}
+
+void MlDecisionLogger::OnDuelEnd(Player* bot, float terminal)
+{
+    if (!sPlayerbotAIConfig.mlLoggingEnabled || !bot)
+        return;
+
+    uint32 matchId = 0;
+    {
+        std::lock_guard<std::mutex> lock(mtx);
+        auto it = duelMatchByGuid.find(bot->GetGUID().GetCounter());
+        if (it != duelMatchByGuid.end())
+        {
+            matchId = it->second;
+            duelMatchByGuid.erase(it);
+        }
+        for (MlPendingDecision& d : pending)
+            if (d.botGuid == bot->GetGUID() && d.matchId == 0)
+                d.matchId = matchId;
+    }
+
+    if (matchId)
+        FlushMatchDecisions(matchId, bot->GetGUID(), terminal);
+    FlushEpisode(bot, terminal);
+}
