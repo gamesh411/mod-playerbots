@@ -152,5 +152,35 @@ Consequences: …
 - **S1/S2 ignore heuristic relevance** for action choice (ranker only), as DEC-013 intended for learned policies.
 - **DEC-013 `ActionPolicy=random` + uniform legal-pool explore** and **DEC-014 spellbook-as-default** remain in code/conf as an **archived off-curriculum path** for prior art / ablations; they are not the S0 showcase default.
 **Why:** Staged artifacts must be replayable; random spellbook exploration is poor showcase material; spellbook ranker stays required but belongs at S2 after scripted-vocab learning.  
-**Consequences:** Engine gains `softmax-stock` duel policy; stage profiles default `SpellPool=queue` until S2; DIRECTIONS D13/D14 and docs hub (#6) restate stages; tickets #9–#11 implement per stage. DEC-005 (arena ε-greedy), DEC-011 (ranking net), DEC-012 (bracket), DEC-015–017 unchanged.
+**Consequences:** Engine gains `softmax-stock` duel policy; stage profiles default `SpellPool=queue` until S2; DIRECTIONS D13/D14 and docs hub (#6) restate stages; tickets #9–#11 implement per stage. DEC-005 (arena ε-greedy), DEC-011 (ranking net), DEC-012 (bracket), DEC-015–017 unchanged. Freeze layout: DEC-019.
+
+### DEC-019 — 2026-07-16 — Stage freeze contract: hybrid artifacts + stage cards
+**Status:** accepted  
+**Context:** [Stage freeze contract: artifact layout + stage card template](https://github.com/gamesh411/mod-playerbots/issues/8) on map [#4](https://github.com/gamesh411/mod-playerbots/issues/4). Every curriculum stage must be mechanically replayable; S0 has no PBML weights while S1/S2 do.  
+**Decision:** **Hybrid freeze** — light half in-repo, heavy `.pbml` via GitHub Release assets keyed by sha256.
+
+| Piece | Location / rule |
+|-------|-----------------|
+| Manifest | `artifacts/duel/s{N}/manifest.json` (required at freeze) |
+| Conf snippet | optional `artifacts/duel/s{N}/playerbots.conf.snippet` |
+| Stage card | `docs/ml/curriculum/s{N}-*.md` (human view; **manifest wins** on conflict) |
+| Git tag | `stage/s{N}-<slug>` (immutable; re-freeze = new tag, never move `stage/s{N}`) |
+| Conf profile | `duel-s{N}` (stable across re-freezes of the same stage) |
+| data_tag | `<csv_basename>+<feature_dim>d` (e.g. `ml_decisions_duel_v2+70d`) |
+| S0 policy | `policy.kind = "softmax-stock"` — no Release asset |
+| S1/S2 policy | Release named as the git tag; asset `duel-s{N}-<slug>.pbml`; manifest stores `release_asset`, `sha256`, `local_name` |
+
+**manifest.json required fields:** `stage`, `git_tag`, `git_sha`, `policy`, `conf_profile`, `data_tag`, `stage_card`, `frozen_at`; optional `conf_snippet`, `notes`.
+
+**Stage card table fields:** Stage, Policy, Vocab, Movement, Policy artifact, Conf profile, Data tag, Git tag, Manifest path, Status (`not frozen` / `frozen`), plus Goal section.
+
+**Why:** Replay is one tag → one manifest; docs stay readable; binaries do not bloat the upstreamable history; S0 freezes without weights.  
+**Consequences:** Populate `artifacts/duel/s{N}/` and fill stage-card TBDs only when a stage freezes (S0 via [#9](https://github.com/gamesh411/mod-playerbots/issues/9)+). [#13](https://github.com/gamesh411/mod-playerbots/issues/13) maps `duel-s{N}` into `wotlk-playerbots-server` / conf.dist. VODs/metrics remain out of this contract.
+
+### DEC-020 — 2026-07-16 — Duel farm infrastructure import inventory
+**Status:** accepted  
+**Context:** [Duel farm infrastructure import (bracket, features, logger)](https://github.com/gamesh411/mod-playerbots/issues/12). `exp/duel-rl-curriculum` is clean `origin/master` (no `src/Ai/Ml/`); duel WIP lives on `wip/duel-farm-uncommitted` atop the mixed archive tip.  
+**Decision:** Path-selective import from **`wip/duel-farm-uncommitted` tip** onto `exp` — bracket, 70-D features, duel logger, spell pool, MlScorer/MlMlpModel, Engine duel hooks + Queue `Baskets`/`PopBasket`, conf/wiring, `tools/ml` trainers. Import Mode B/C hybrid strategies **dormant** (`HybridRelevanceEnabled=0`). **Do not** import arena team fill / BG strategy archive hunks. On import, rewrite duel conf defaults to DEC-018 (`SpellPool=queue`, `ActionPolicy=softmax-stock` or interim `heuristic` until Softmax lands). Keep existing `docs/ml/` hub; do not overwrite from wip docs. Full inventory: [`docs/ml/research/duel-farm-infrastructure-import.md`](research/duel-farm-infrastructure-import.md).  
+**Why:** Need a coherent farm substrate for S0–S2 without pulling arena-first history or wrong showcase defaults (random+spellbook).  
+**Consequences:** Execution is a follow-on AFK task blocking [#9](https://github.com/gamesh411/mod-playerbots/issues/9); Engine Softmax behaviour remains [#9](https://github.com/gamesh411/mod-playerbots/issues/9), not part of the file copy.
 
