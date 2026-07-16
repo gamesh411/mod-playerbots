@@ -209,7 +209,7 @@ Consequences: …
 **Consequences:** Execution ticket implements Softmax sample + conf key on `exp/duel-rl-curriculum`. S0 farm vs demo differ by τ only. Duel-throughput maximization for faster CSV collection is a separate ticket (conf and/or Engine), not part of this DEC.
 
 ### DEC-023 — 2026-07-16 — Duel-only farm throughput + full-resource start gate
-**Status:** accepted  
+**Status:** accepted (match/restore power list superseded by **DEC-024**)  
 **Context:** [Maximize duel farm throughput for training](https://github.com/gamesh411/mod-playerbots/issues/16). Need max Arms↔Frost matches/hour for S0–S2 CSV without breaking DEC-022 Softmax-stock or scripted movement; user requires a server mode with **no other bot activity**, full HP + non-rage resources before start, and major-CD start state observed but not used as a match gate.  
 **Decision:**
 
@@ -225,4 +225,19 @@ Consequences: …
 
 **Why:** Isolating duel-farm removes arena/BG concurrency theft; instant park restore + short debounce maximizes matches/hour while keeping every episode’s start resources comparable; logging major-CD readiness without gating preserves natural CD-desync coverage for the ranker.  
 **Consequences:** Execute follow-on lands Engine restore/gate + logger snapshot on `exp/duel-rl-curriculum`, and `duel-farm` in `wotlk-playerbots-server` (`Get-ServerProfiles` / `Apply-MlDuelBracket` / ensure_running). Stage-replay profiles (#13) stay separate from this farm mode.
+
+### DEC-024 — 2026-07-16 — Duel-start resource gate: regenerative vs build-up
+**Status:** accepted  
+**Context:** Correction to [Maximize duel farm throughput for training](https://github.com/gamesh411/mod-playerbots/issues/16) / DEC-023 after Death Knight review. AzerothCore treats **Rage** and **Runic Power** as build-up powers (login/out-of-combat toward 0); DK **runes** are a separate ready/cooldown pool (`Player::GetRuneCooldown`).  
+**Decision:** Supersede DEC-023’s match hard gate / park-restore **power list** with this split:
+
+| Kind | Examples | Duel-start gate | Park restore |
+|------|----------|-----------------|--------------|
+| Regenerative / ready pool | Mana, Energy, Focus; **all DK runes off cooldown** | **Required full / ready** | Top up mana/energy/focus; clear rune cooldowns |
+| Build-up combat power | **Rage**, **Runic Power** | **Not gated** (may be 0) | Do **not** require or force full |
+
+Health remains **100%** for both participants (DEC-023). Major ability CDs stay observe-not-gate (DEC-023).  
+
+**Why:** Same shape as Warrior Rage: spend-to-zero combat meters are not “full to start”; DK runes are the ready pool analogous to a Rogue’s Energy bar being full.  
+**Consequences:** [Execute duel-farm profile + full-resource rematch (DEC-023)](https://github.com/gamesh411/mod-playerbots/issues/17) implements this split (not “full Runic Power”).
 
