@@ -2209,13 +2209,16 @@ AiPlayerbot.MlDuelBracket.ActionPolicy = "softmax-stock"
 AiPlayerbot.MlDuelBracket.SpellPool = "queue"
 # Softmax temperature for ActionPolicy=softmax-stock. Farm default 10; ≤0 ⇒ argmax (demo/freeze).
 AiPlayerbot.MlDuelBracket.SoftmaxTemperature = 10.0
-AiPlayerbot.MlDuelBracket.ParkAlliance = "0,-9104,416,92.5,0.7"
+# Alliance: Elwynn map 34.00, 51.00 (outside SW gates). Horde: Durotar south of Org.
+AiPlayerbot.MlDuelBracket.ParkAlliance = "0,-9120,355,93.2,0.7"
 AiPlayerbot.MlDuelBracket.ParkHorde = "1,1357,-4369,26.5,3.5"
 # 0 derives the class mask from Pairs.
 AiPlayerbot.MlDuelBracket.AllowedClassMask = 0
 AiPlayerbot.MlDuelBracket.MaxMatchRange = 80
 # Farm rematch debounce only (DEC-023); resource wait is replaced by park restore.
 AiPlayerbot.MlDuelBracket.RematchCooldownMs = 500
+# When 1, clear all spell cooldowns on duel-end restore. Default 0 (keep CDs).
+AiPlayerbot.MlDuelBracket.ResetCooldownsOnDuelEnd = 0
 # reward = short_reward + TerminalLambda * terminal; keep terminal dominant.
 AiPlayerbot.MlDuelBracket.TerminalLambda = 25.0
 

@@ -12,7 +12,7 @@ class PlayerbotAI;
 class MlDuelBracketTrigger : public Trigger
 {
 public:
-    MlDuelBracketTrigger(PlayerbotAI* botAI, std::string const name = "ml duel bracket") : Trigger(botAI, name, 2) {}
+    MlDuelBracketTrigger(PlayerbotAI* botAI, std::string const name = "ml duel bracket") : Trigger(botAI, name, 1) {}
 
     bool IsActive() override;
 };

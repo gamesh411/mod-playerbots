@@ -39,7 +39,6 @@ void MlDecisionLogger::OnActionExecuted(PlayerbotAI* botAI, std::string const& a
         return;
 
     MlPendingDecision d;
-    d.episodeId = nextEpisodeId++;
     d.botGuid = bot->GetGUID();
     d.logTimeMs = getMSTime();
     d.resolveAtMs = d.logTimeMs + sPlayerbotAIConfig.mlRewardDelayMs;
@@ -52,6 +51,7 @@ void MlDecisionLogger::OnActionExecuted(PlayerbotAI* botAI, std::string const& a
     d.wasInterruptAction = CombatDecisionUtil::IsInterruptAction(actionName);
 
     std::lock_guard<std::mutex> lock(mtx);
+    d.episodeId = nextEpisodeId++;
     auto it = duelMatchByGuid.find(d.botGuid.GetCounter());
     if (it != duelMatchByGuid.end())
         d.matchId = it->second;
@@ -268,7 +268,6 @@ void MlDecisionLogger::LogDuelStartSnapshot(Player* bot, uint32 matchId)
         return;
 
     MlPendingDecision d;
-    d.episodeId = nextEpisodeId++;
     d.matchId = matchId;
     d.botGuid = bot->GetGUID();
     d.logTimeMs = getMSTime();
@@ -278,6 +277,10 @@ void MlDecisionLogger::LogDuelStartSnapshot(Player* bot, uint32 matchId)
     d.finalScore = 0.0f;
     d.shortReward = 0.0f;
     d.shortResolved = true;
+    {
+        std::lock_guard<std::mutex> lock(mtx);
+        d.episodeId = nextEpisodeId++;
+    }
     WriteRow(d, 0.0f, 0.0f);
 }
 

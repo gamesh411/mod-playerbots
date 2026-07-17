@@ -78,6 +78,17 @@ bool CheckMountStateAction::Execute(Event /*event*/)
     }
     ClearStaleFlightFlags();
 
+    // Open-world duels: never fight mounted (warriors were remounting while mages free-cast).
+    if (bot->duel)
+    {
+        if (bot->IsMounted())
+        {
+            Dismount();
+            return true;
+        }
+        return false;
+    }
+
     // Determine if there are no attackers
     bool noAttackers = !AI_VALUE2(bool, "combat", "self target") || !AI_VALUE(uint8, "attacker count");
     bool enemy = AI_VALUE(Unit*, "enemy player target");
@@ -153,6 +164,10 @@ bool CheckMountStateAction::isUseful()
     if (botAI->IsInVehicle() || bot->isDead() || bot->HasUnitState(UNIT_STATE_IN_FLIGHT) ||
         !bot->IsOutdoors() || bot->InArena())
         return false;
+
+    // During open-world duels only useful to force a dismount.
+    if (bot->duel)
+        return bot->IsMounted();
 
     master = GetMaster();
 

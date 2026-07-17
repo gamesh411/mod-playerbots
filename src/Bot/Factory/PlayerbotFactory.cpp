@@ -30,6 +30,7 @@
 #include "PlayerbotRepository.h"
 #include "PlayerbotGuildMgr.h"
 #include "Playerbots.h"
+#include "MlDuelBracket.h"
 #include "QuestDef.h"
 #include "RandomItemMgr.h"
 #include "RandomPlayerbotFactory.h"
@@ -836,7 +837,7 @@ void PlayerbotFactory::Randomize(bool incremental)
     if (pmo)
         pmo->finish();
 
-    if (bot->GetLevel() >= 70)
+    if (bot->GetLevel() >= 70 && !sMlDuelBracket.IsEnabled())
     {
         pmo = sPerfMonitor.start(PERF_MON_RNDBOT, "PlayerbotFactory_Arenas");
         // LOG_INFO("playerbots", "Initializing arena teams...");
@@ -4739,6 +4740,9 @@ void PlayerbotFactory::InitImmersive()
 
 void PlayerbotFactory::InitArenaTeam()
 {
+    // Duel-farm / MlDuelBracket: never touch arena teams (avoids null-captain crashes + log spam).
+    if (sMlDuelBracket.IsEnabled())
+        return;
 
     if (!sPlayerbotAIConfig.IsInRandomAccountList(bot->GetSession()->GetAccountId()))
         return;
@@ -4755,10 +4759,14 @@ void PlayerbotFactory::InitArenaTeam()
             for (auto it = sArenaTeamMgr->GetArenaTeams().begin(); it != sArenaTeamMgr->GetArenaTeams().end(); ++it)
             {
                 ArenaTeam* arenateam = it->second;
+                if (!arenateam)
+                    continue;
                 if (arenateam->GetCaptain() && arenateam->GetCaptain().IsPlayer())
                 {
-                    Player* bot = ObjectAccessor::FindPlayer(arenateam->GetCaptain());
-                    PlayerbotAI* botAI = GET_PLAYERBOT_AI(bot);
+                    Player* captain = ObjectAccessor::FindPlayer(arenateam->GetCaptain());
+                    if (!captain)
+                        continue;
+                    PlayerbotAI* botAI = GET_PLAYERBOT_AI(captain);
                     if (!botAI || botAI->IsRealPlayer())
                     {
                         continue;

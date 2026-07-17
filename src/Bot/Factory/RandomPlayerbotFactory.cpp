@@ -6,6 +6,8 @@
 
 #include "RandomPlayerbotFactory.h"
 
+#include <unordered_set>
+
 #include "AccountMgr.h"
 #include "ArenaTeamMgr.h"
 #include "DatabaseEnv.h"
@@ -683,6 +685,21 @@ void RandomPlayerbotFactory::CreateRandomBots()
             continue;
         }
 
+        // Classes already present on this account (avoid duplicate warriors when filling mages).
+        std::unordered_set<uint8> existingClasses;
+        {
+            CharacterDatabasePreparedStatement* charStmt =
+                CharacterDatabase.GetPreparedStatement(CHAR_SEL_CHARS_BY_ACCOUNT_ID);
+            charStmt->SetData(0, accountId);
+            if (PreparedQueryResult charResult = CharacterDatabase.Query(charStmt))
+            {
+                do
+                {
+                    existingClasses.insert(charResult->Fetch()[1].Get<uint8>());
+                } while (charResult->NextRow());
+            }
+        }
+
         if (!nameCached)
         {
             nameCached = true;
@@ -730,6 +747,9 @@ void RandomPlayerbotFactory::CreateRandomBots()
                 continue;
 
             if (sPlayerbotAIConfig.mlDuelBracketEnabled && !sMlDuelBracket.IsClassAllowed(cls))
+                continue;
+
+            if (existingClasses.count(cls))
                 continue;
 
             Player* playerBot = factory.CreateRandomBot(session, cls, nameCache);
