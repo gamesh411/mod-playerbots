@@ -26,6 +26,8 @@ from pathlib import Path
 
 import numpy as np
 
+from action_flags import fill_action_flags
+
 ACTION_COLS_V2 = [f"a{i}" for i in range(8)]
 ACTION_COLS_V1 = [f"a{i}" for i in range(6)]
 HIDDEN = 64
@@ -150,7 +152,7 @@ def resolve_fieldnames(path: Path) -> tuple[list[str], bool]:
 
 
 def load_dataset(
-    path: Path,
+    paths: list[Path],
     pvp_only: bool,
     pve_only: bool,
     arena_only: bool,
@@ -162,97 +164,113 @@ def load_dataset(
     self_class: str | None,
     max_rows: int,
     imitate_expert: bool,
+    imitate_target: float,
 ):
     xs, ys = [], []
     skipped_meta = skipped_zone = skipped_bad = skipped_term = skipped_noise = skipped_class = 0
+    expert_examples = 0
     class_f = SELF_CLASS_F.get(self_class.lower()) if self_class else None
 
-    fieldnames, headerless = resolve_fieldnames(path)
-    feature_cols = detect_feature_cols(fieldnames)
-    has_v2 = all(c in fieldnames for c in ACTION_COLS_V2)
-    has_v1 = all(c in fieldnames for c in ACTION_COLS_V1)
-    if has_v2:
-        action_cols = ACTION_COLS_V2
-    elif has_v1 and allow_legacy_18:
-        action_cols = ACTION_COLS_V1
-    else:
-        raise SystemExit(
-            f"CSV missing a0..a7. Found fields={fieldnames[:20]}... "
-            "Collect new logs, or pass --allow-legacy-18 for old 18-D files."
+    for path in paths:
+        fieldnames, headerless = resolve_fieldnames(path)
+        feature_cols = detect_feature_cols(fieldnames)
+        has_v2 = all(c in fieldnames for c in ACTION_COLS_V2)
+        has_v1 = all(c in fieldnames for c in ACTION_COLS_V1)
+        if has_v2:
+            action_cols = ACTION_COLS_V2
+        elif has_v1 and allow_legacy_18:
+            action_cols = ACTION_COLS_V1
+        else:
+            raise SystemExit(
+                f"CSV missing a0..a7. Found fields={fieldnames[:20]}... "
+                "Collect new logs, or pass --allow-legacy-18 for old 18-D files."
+            )
+
+        has_expert = "expert_action" in fieldnames
+        # Aggregate OK: v3 contributes reward rows; v4 adds expert score-up when present.
+        if imitate_expert and not has_expert:
+            print(f"note [{path.name}]: no expert_action — reward rows only (no score-up)")
+        expected = len(feature_cols) + 8
+        print(
+            f"schema [{path.name}]: features={len(feature_cols)} flags={len(action_cols)} "
+            f"input_dim~={expected} expert_action={has_expert} headerless={headerless}"
         )
 
-    has_expert = "expert_action" in fieldnames
-    expected = len(feature_cols) + 8
-    print(
-        f"schema: features={len(feature_cols)} flags={len(action_cols)} "
-        f"input_dim~={expected} expert_action={has_expert} headerless={headerless}"
-    )
-
-    with path.open(newline="") as f:
-        reader = csv.DictReader(f, fieldnames=fieldnames if headerless else None)
-        for row in reader:
-            if max_rows and len(ys) >= max_rows:
-                break
-            if row.get("episode_id") == "episode_id":
-                continue
-            in_bg = row.get("in_bg", "0") == "1"
-            in_arena = row.get("in_arena", "0") == "1"
-            in_duel = row.get("in_duel", "0") == "1"
-            if duel_only and not in_duel:
-                skipped_zone += 1
-                continue
-            if arena_only and not in_arena:
-                skipped_zone += 1
-                continue
-            if pvp_only and not in_bg and not in_arena and not in_duel:
-                skipped_zone += 1
-                continue
-            if pve_only and (in_bg or in_arena or in_duel):
-                skipped_zone += 1
-                continue
-            if terminal_only:
-                try:
-                    if abs(float(row.get("terminal", "0"))) != 1.0:
+        with path.open(newline="") as f:
+            reader = csv.DictReader(f, fieldnames=fieldnames if headerless else None)
+            for row in reader:
+                if row.get("episode_id") == "episode_id":
+                    continue
+                in_bg = row.get("in_bg", "0") == "1"
+                in_arena = row.get("in_arena", "0") == "1"
+                in_duel = row.get("in_duel", "0") == "1"
+                if duel_only and not in_duel:
+                    skipped_zone += 1
+                    continue
+                if arena_only and not in_arena:
+                    skipped_zone += 1
+                    continue
+                if pvp_only and not in_bg and not in_arena and not in_duel:
+                    skipped_zone += 1
+                    continue
+                if pve_only and (in_bg or in_arena or in_duel):
+                    skipped_zone += 1
+                    continue
+                if terminal_only:
+                    try:
+                        if abs(float(row.get("terminal", "0"))) != 1.0:
+                            skipped_term += 1
+                            continue
+                    except ValueError:
                         skipped_term += 1
                         continue
-                except ValueError:
-                    skipped_term += 1
+                action = row.get("action", "")
+                if drop_meta and is_meta_action(action):
+                    skipped_meta += 1
                     continue
-            action = row.get("action", "")
-            if drop_meta and is_meta_action(action):
-                skipped_meta += 1
-                continue
-            if drop_duel_noise and is_duel_noise_action(action):
-                skipped_noise += 1
-                continue
-            try:
-                feats = [float(row[c]) for c in feature_cols]
-                if class_f is not None and feats[class_f] < 0.5:
-                    skipped_class += 1
+                if drop_duel_noise and is_duel_noise_action(action):
+                    skipped_noise += 1
                     continue
-                flags = [float(row[c]) for c in action_cols]
-                if imitate_expert and not has_expert:
-                    raise SystemExit("--imitate-expert requires expert_action column (duel_v4)")
-                y = float(row["reward"])
-                x = feats + flags
-                if len(action_cols) == 6:
-                    x.extend([0.0, 0.0])
-            except (KeyError, ValueError):
-                skipped_bad += 1
-                continue
-            xs.append(x)
-            ys.append(y)
+                try:
+                    feats = [float(row[c]) for c in feature_cols]
+                    if class_f is not None and feats[class_f] < 0.5:
+                        skipped_class += 1
+                        continue
+                    flags = [float(row[c]) for c in action_cols]
+                    if len(action_cols) == 6:
+                        flags.extend([0.0, 0.0])
+                    y = float(row["reward"])
+                    # Outcome row for the action actually taken (aggregate / expert-off).
+                    xs.append(feats + flags)
+                    ys.append(y)
+                    # DEC-025 DAgger: score-up Softmax-stock τ=0 expert on learner states.
+                    if imitate_expert and has_expert:
+                        expert = (row.get("expert_action") or "").strip()
+                        if expert and expert != action:
+                            xs.append(feats + fill_action_flags(expert))
+                            ys.append(max(y, imitate_target))
+                            expert_examples += 1
+                except (KeyError, ValueError):
+                    skipped_bad += 1
+                    continue
 
     if not xs:
-        raise SystemExit(f"No usable rows in {path}")
+        raise SystemExit(f"No usable rows in {paths}")
     X = np.asarray(xs, dtype=np.float32)
     y = np.asarray(ys, dtype=np.float32)
+    if max_rows and len(y) > max_rows:
+        # Subsample after aggregate so early CSVs (e.g. v3) cannot starve v4 DAgger rows.
+        rng = np.random.default_rng(0)
+        idx = rng.choice(len(y), size=max_rows, replace=False)
+        X = X[idx]
+        y = y[idx]
+        print(f"subsample: {len(ys)} -> {max_rows}")
     # Duel λ=25 dominates; keep a wider clip than old ±3 short-only logs.
     y = np.clip(y, -30.0, 30.0)
     print(
-        f"filter: kept={len(y)} skipped_meta={skipped_meta} skipped_zone={skipped_zone} "
-        f"skipped_term={skipped_term} skipped_noise={skipped_noise} skipped_class={skipped_class} "
-        f"skipped_bad={skipped_bad} input_dim={X.shape[1]}"
+        f"filter: kept={len(y)} expert_scoreup={expert_examples} skipped_meta={skipped_meta} "
+        f"skipped_zone={skipped_zone} skipped_term={skipped_term} skipped_noise={skipped_noise} "
+        f"skipped_class={skipped_class} skipped_bad={skipped_bad} input_dim={X.shape[1]}"
     )
     return X, y
 
@@ -319,7 +337,7 @@ def write_pbml(path: Path, w1, b1, w2, b2):
 
 def main():
     ap = argparse.ArgumentParser(description="Train PBML1 hybrid/pvp/pve/duel ranker from decision logs")
-    ap.add_argument("--csv", type=Path, required=True, help="ml_decisions*.csv path")
+    ap.add_argument("--csv", type=Path, nargs="+", required=True, help="ml_decisions*.csv path(s); aggregate all")
     ap.add_argument("--out", type=Path, required=True, help="output .pbml path")
     ap.add_argument("--pvp-only", action="store_true", help="train only on BG/arena/duel rows")
     ap.add_argument("--arena-only", action="store_true", help="train only on in_arena=1 rows")
@@ -334,7 +352,9 @@ def main():
                     help="keep rows where self class one-hot is set (warrior|mage|...)")
     ap.add_argument("--max-rows", type=int, default=0, help="cap kept rows after filters (0 = all)")
     ap.add_argument("--imitate-expert", action="store_true",
-                    help="require expert_action column (duel_v4); still reward-trains until CE lands")
+                    help="DAgger score-up: add expert_action flag vectors with elevated target (duel_v4)")
+    ap.add_argument("--imitate-target", type=float, default=25.0,
+                    help="minimum regression target for expert score-up examples")
     ap.add_argument("--epochs", type=int, default=40)
     ap.add_argument("--lr", type=float, default=1e-2)
     ap.add_argument("--hidden", type=int, default=64, help="hidden layer width")
@@ -361,6 +381,7 @@ def main():
         self_class=args.self_class or None,
         max_rows=args.max_rows,
         imitate_expert=args.imitate_expert,
+        imitate_target=args.imitate_target,
     )
     w1, b1, w2, b2 = train(X, y, epochs=args.epochs, lr=args.lr, seed=args.seed)
     write_pbml(args.out, w1, b1, w2, b2)
