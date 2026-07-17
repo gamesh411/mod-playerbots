@@ -50,3 +50,7 @@ local.properties
 .cproject
 .vscode
 .idea
+
+__pycache__/
+*.pyc
+
