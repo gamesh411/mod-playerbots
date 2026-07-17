@@ -2209,9 +2209,9 @@ AiPlayerbot.MlDuelBracket.ActionPolicy = "softmax-stock"
 AiPlayerbot.MlDuelBracket.SpellPool = "queue"
 # Softmax temperature for ActionPolicy=softmax-stock. Farm default 10; ≤0 ⇒ argmax (demo/freeze).
 AiPlayerbot.MlDuelBracket.SoftmaxTemperature = 10.0
-# Alliance: Elwynn map 34.00, 51.00 (outside SW gates). Horde: Durotar south of Org.
+# Alliance: Elwynn map 34.00, 51.00 (outside SW gates). Horde: Durotar map 45.83, 13.90.
 AiPlayerbot.MlDuelBracket.ParkAlliance = "0,-9120,355,93.2,0.7"
-AiPlayerbot.MlDuelBracket.ParkHorde = "1,1357,-4369,26.5,3.5"
+AiPlayerbot.MlDuelBracket.ParkHorde = "1,1318.4,-4385.8,26.5,3.5"
 # 0 derives the class mask from Pairs.
 AiPlayerbot.MlDuelBracket.AllowedClassMask = 0
 AiPlayerbot.MlDuelBracket.MaxMatchRange = 80

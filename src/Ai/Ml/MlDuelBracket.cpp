@@ -5,6 +5,7 @@
 #include "MlDuelBracket.h"
 
 #include <algorithm>
+#include <cmath>
 #include <sstream>
 
 #include "AiFactory.h"
@@ -12,6 +13,7 @@
 #include "DBCEnums.h"
 #include "DBCStores.h"
 #include "Log.h"
+#include "Map.h"
 #include "MlDecisionLogger.h"
 #include "MotionMaster.h"
 #include "ObjectAccessor.h"
@@ -94,8 +96,8 @@ void MlDuelBracket::LoadFromConfig()
     }
     if (!ParsePark(sPlayerbotAIConfig.mlDuelBracketParkHorde, hordePark))
     {
-        // Flat Durotar pad south of Orgrimmar.
-        hordePark = {1, 1357.f, -4369.f, 26.5f, 3.5f};
+        // Durotar map 45.83, 13.90 -> world 1318.4, -4385.8.
+        hordePark = {1, 1318.4f, -4385.8f, 26.5f, 3.5f};
     }
 
     {
@@ -283,9 +285,86 @@ bool MlDuelBracket::EnsureAtPark(Player* bot)
     return true;
 }
 
-void MlDuelBracket::PatrolNearPark(Player* /*bot*/)
+void MlDuelBracket::PatrolNearPark(Player* bot)
 {
-    // Intentionally empty: duel-farm bots stay clamped in the park zone (no wander teleports).
+    if (!bot || !bot->IsInWorld() || bot->IsBeingTeleported() || bot->duel)
+        return;
+    if (bot->isMoving() || bot->IsInCombat())
+        return;
+    if (!IsNearPark(bot) || !AreaAllowsDuels(bot))
+    {
+        ForceToPark(bot);
+        return;
+    }
+
+    // Already pathing inside the pad — let it finish.
+    if (bot->GetMotionMaster()->GetCurrentMovementGeneratorType() == POINT_MOTION_TYPE)
+        return;
+
+    // Soft throttle so 200 idle bots do not all repath every AI tick.
+    if (urand(1, 100) > 45)
+        return;
+
+    MlDuelPark const& park = (bot->GetTeamId() == TEAM_ALLIANCE) ? alliancePark : hordePark;
+    float const radius = std::min(parkWanderRadius, static_cast<float>(maxMatchRange) * 0.45f);
+    float const angle = frand(0.f, 6.2831853f);
+    float const dist = frand(6.f, std::max(6.f, radius));
+    float x = park.x + dist * std::cos(angle);
+    float y = park.y + dist * std::sin(angle);
+    float z = park.z;
+    if (bot->GetMap())
+    {
+        float ground = bot->GetMap()->GetHeight(bot->GetPhaseMask(), x, y, z + 40.f);
+        if (ground > INVALID_HEIGHT)
+            z = ground + 0.5f;
+    }
+
+    bot->GetMotionMaster()->Clear();
+    bot->GetMotionMaster()->MovePoint(1, x, y, z);
+}
+
+void MlDuelBracket::MoveTowardPartner(Player* bot, Player* partner)
+{
+    if (!bot || !partner || !bot->IsInWorld() || bot->IsBeingTeleported() || bot->duel)
+        return;
+    if (bot->isMoving() || bot->GetMapId() != partner->GetMapId())
+        return;
+
+    float const tx = partner->GetPositionX();
+    float const ty = partner->GetPositionY();
+    float const tz = partner->GetPositionZ();
+    bot->GetMotionMaster()->Clear();
+    bot->GetMotionMaster()->MovePoint(2, tx, ty, tz);
+}
+
+ObjectGuid MlDuelBracket::FindNearbyComplement(Player* bot, MlDuelSpecKey const& want) const
+{
+    if (!bot || !bot->GetMap())
+        return ObjectGuid::Empty;
+
+    float bestDist = static_cast<float>(maxMatchRange) + 25.f;
+    ObjectGuid best;
+    Map::PlayerList const& players = bot->GetMap()->GetPlayers();
+    for (Map::PlayerList::const_iterator it = players.begin(); it != players.end(); ++it)
+    {
+        Player* p = it->GetSource();
+        if (!p || p == bot || !p->IsInWorld() || p->GetMapId() != bot->GetMapId())
+            continue;
+        if (!IsNearPark(p) || !AreaAllowsDuels(p))
+            continue;
+        PlayerbotAI* pAI = GET_PLAYERBOT_AI(p);
+        if (!IsBracketCandidate(p, pAI))
+            continue;
+        if (!(SpecOf(p) == want))
+            continue;
+        float const d = bot->GetDistance(p);
+        if (d < bestDist)
+        {
+            bestDist = d;
+            best = p->GetGUID();
+        }
+    }
+    return best;
 }
 
 bool MlDuelBracket::IsResourceReady(Player* bot) const
@@ -446,8 +525,9 @@ bool MlDuelBracket::TryMatchOrQueue(PlayerbotAI* botAI)
         // the shared waitlist caused STATUS_HEAP_CORRUPTION (0xC0000374) under load.
         waiting.erase(std::remove_if(waiting.begin(), waiting.end(),
                                      [&](Waiter const& w) {
+                                         // Keep self on the list; refreshed below if missing.
                                          if (w.guid == bot->GetGUID())
-                                             return true;
+                                             return false;
                                          if (w.mapId != mapId)
                                          {
                                              // Time-expire other-map rows without touching their Player*.
@@ -467,25 +547,28 @@ bool MlDuelBracket::TryMatchOrQueue(PlayerbotAI* botAI)
             PlayerbotAI* candAI = cand ? GET_PLAYERBOT_AI(cand) : nullptr;
             if (!cand || cand->GetMapId() != mapId || !IsBracketCandidate(cand, candAI))
                 continue;
-            // No CombatStop / Teleport while holding mtx — finish match setup outside the lock.
+            // Peek only — leave on waitlist until duel request actually fires.
             partnerGuid = cand->GetGUID();
-            waiting.erase(it);
             break;
         }
 
-        if (!partnerGuid)
-        {
-            bool present = false;
-            for (Waiter const& w : waiting)
-                if (w.guid == bot->GetGUID())
-                    present = true;
-            if (!present)
-                waiting.push_back({bot->GetGUID(), myKey, now, mapId});
-        }
+        // Always stay queued until InitiateDuel clears us (covers walk-into-range retries).
+        bool present = false;
+        for (Waiter const& w : waiting)
+            if (w.guid == bot->GetGUID())
+                present = true;
+        if (!present)
+            waiting.push_back({bot->GetGUID(), myKey, now, mapId});
     }
 
+    // Waitlist miss: wander the pad and opportunistically pick a nearby complement.
     if (!partnerGuid)
-        return false;
+    {
+        PatrolNearPark(bot);
+        partnerGuid = FindNearbyComplement(bot, want);
+        if (!partnerGuid)
+            return false;
+    }
 
     Player* partner = ObjectAccessor::FindPlayer(partnerGuid);
     PlayerbotAI* partnerAI = partner ? GET_PLAYERBOT_AI(partner) : nullptr;
@@ -498,8 +581,23 @@ bool MlDuelBracket::TryMatchOrQueue(PlayerbotAI* botAI)
     RestoreForRematch(partner);
     if (!AreaAllowsDuels(bot) || !AreaAllowsDuels(partner) || !IsResourceReady(bot) || !IsResourceReady(partner))
         return false;
-    if (bot->GetDistance(partner) > static_cast<float>(maxMatchRange) + 40.f)
-        EnsureAtPark(partner);
+
+    float const dist = bot->GetDistance(partner);
+    if (dist > static_cast<float>(maxMatchRange) + 40.f)
+    {
+        // Too far even for park wander — snap partner in once, then walk.
+        ForceToPark(partner);
+    }
+    if (bot->GetDistance(partner) > duelRequestRange)
+    {
+        // Close the gap on foot so duel request can land; retry next tick.
+        MoveTowardPartner(bot, partner);
+        MoveTowardPartner(partner, bot);
+        return false;
+    }
+
+    ClearWaiting(bot->GetGUID());
+    ClearWaiting(partner->GetGUID());
 
     // Lower guid initiates to avoid double-cast races.
     Player* challenger = bot->GetGUID().GetCounter() < partner->GetGUID().GetCounter() ? bot : partner;

@@ -464,7 +464,7 @@ bool PlayerbotAIConfig::Initialize()
     mlDuelBracketParkAlliance =
         sConfigMgr->GetOption<std::string>("AiPlayerbot.MlDuelBracket.ParkAlliance", "0,-9120,355,93.2,0.7");
     mlDuelBracketParkHorde =
-        sConfigMgr->GetOption<std::string>("AiPlayerbot.MlDuelBracket.ParkHorde", "1,1357,-4369,26.5,3.5");
+        sConfigMgr->GetOption<std::string>("AiPlayerbot.MlDuelBracket.ParkHorde", "1,1318.4,-4385.8,26.5,3.5");
     mlDuelBracketAllowedClassMask = sConfigMgr->GetOption<uint32>("AiPlayerbot.MlDuelBracket.AllowedClassMask", 0);
     mlDuelBracketMaxMatchRange = sConfigMgr->GetOption<uint32>("AiPlayerbot.MlDuelBracket.MaxMatchRange", 80);
     mlDuelBracketRematchCooldownMs =
