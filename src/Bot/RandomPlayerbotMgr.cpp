@@ -1552,9 +1552,20 @@ bool RandomPlayerbotMgr::ProcessBot(Player* bot)
         uint32 teleport = GetEventValue(botId, "teleport");
         if (!teleport)
         {
-            LOG_DEBUG("playerbots", "Bot #{} <{}>: teleport for level and refresh", botId, bot->GetName());
             Refresh(bot);
-            RandomTeleportForLevel(bot);
+            // AutoTeleportForLevel only gates level-up maintenance; the idle teleport
+            // event always fired RandomTeleportForLevel and scattered duel-farm bots.
+            if (sMlDuelBracket.IsEnabled())
+            {
+                LOG_DEBUG("playerbots", "Bot #{} <{}>: duel-bracket park teleport", botId, bot->GetName());
+                sMlDuelBracket.ForceToPark(bot);
+                sMlDuelBracket.RestoreForRematch(bot);
+            }
+            else
+            {
+                LOG_DEBUG("playerbots", "Bot #{} <{}>: teleport for level and refresh", botId, bot->GetName());
+                RandomTeleportForLevel(bot);
+            }
             uint32 time = urand(sPlayerbotAIConfig.minRandomBotTeleportInterval,
                                 sPlayerbotAIConfig.maxRandomBotTeleportInterval);
             ScheduleTeleport(botId, time);
@@ -1574,6 +1585,13 @@ void RandomPlayerbotMgr::Revive(Player* player)
     SetEventValue(bot, "revive", 0, 0);
 
     Refresh(player);
+    // Duel bracket: never grind-teleport into open world (Northrend Z=-200000 loops).
+    if (sMlDuelBracket.IsEnabled())
+    {
+        sMlDuelBracket.ForceToPark(player);
+        sMlDuelBracket.RestoreForRematch(player);
+        return;
+    }
     RandomTeleportGrindForLevel(player);
 }
 
@@ -1772,6 +1790,12 @@ void RandomPlayerbotMgr::RandomTeleportForLevel(Player* bot)
     if (bot->InBattleground())
         return;
 
+    if (sMlDuelBracket.IsEnabled())
+    {
+        sMlDuelBracket.ForceToPark(bot);
+        return;
+    }
+
     if (bot->GetLevel() >= 10 && urand(0, 100) < sPlayerbotAIConfig.probTeleToBankers * 100)
     {
         std::vector<WorldLocation> locs = sTravelMgr.GetCityLocations(bot);
@@ -1793,6 +1817,13 @@ void RandomPlayerbotMgr::RandomTeleportGrindForLevel(Player* bot)
 {
     if (bot->InBattleground())
         return;
+
+    if (sMlDuelBracket.IsEnabled())
+    {
+        sMlDuelBracket.ForceToPark(bot);
+        sMlDuelBracket.RestoreForRematch(bot);
+        return;
+    }
 
     std::vector<WorldLocation> locs = sTravelMgr.GetTeleportLocations(bot);
     LOG_DEBUG("playerbots", "Random teleporting bot {} for level {} ({} locations available)", bot->GetName().c_str(),
@@ -1977,7 +2008,10 @@ void RandomPlayerbotMgr::RandomizeFirst(Player* bot)
     if (pmo)
         pmo->finish();
 
-    RandomTeleportForLevel(bot);
+    if (sMlDuelBracket.IsEnabled())
+        sMlDuelBracket.ForceToPark(bot);
+    else
+        RandomTeleportForLevel(bot);
 }
 
 void RandomPlayerbotMgr::RandomizeMin(Player* bot)
@@ -2993,6 +3027,16 @@ void RandomPlayerbotMgr::ChangeStrategy(Player* player)
 {
     uint32 bot = player->GetGUID().GetCounter();
 
+    if (sMlDuelBracket.IsEnabled())
+    {
+        LOG_INFO("playerbots", "Bot #{} <{}>: duel-bracket park (skip grind/RPG strategy change)", bot,
+                 player->GetName().c_str());
+        sMlDuelBracket.ForceToPark(player);
+        SetEventValue(bot, "teleport", 1, sPlayerbotAIConfig.maxRandomBotInWorldTime);
+        ScheduleChangeStrategy(bot);
+        return;
+    }
+
     if (frand(0.f, 100.f) > sPlayerbotAIConfig.randomBotRpgChance)
     {
         LOG_INFO("playerbots", "Bot #{} <{}>: sent to grind spot", bot, player->GetName().c_str());
@@ -3012,6 +3056,14 @@ void RandomPlayerbotMgr::ChangeStrategy(Player* player)
 void RandomPlayerbotMgr::ChangeStrategyOnce(Player* player)
 {
     uint32 bot = player->GetGUID().GetCounter();
+
+    if (sMlDuelBracket.IsEnabled())
+    {
+        LOG_INFO("playerbots", "Bot #{} <{}>: duel-bracket park", bot, player->GetName().c_str());
+        sMlDuelBracket.ForceToPark(player);
+        Refresh(player);
+        return;
+    }
 
     if (frand(0.f, 100.f) > sPlayerbotAIConfig.randomBotRpgChance)  // select grind / pvp
     {

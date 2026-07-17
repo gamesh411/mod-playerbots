@@ -222,16 +222,37 @@ bool MlDuelBracket::AreaAllowsDuels(Player* bot) const
     return area && (area->flags & AREA_FLAG_ALLOW_DUELS);
 }
 
-bool MlDuelBracket::EnsureAtPark(Player* bot)
+bool MlDuelBracket::IsNearPark(Player* bot) const
 {
-    if (!bot || AreaAllowsDuels(bot))
-        return AreaAllowsDuels(bot);
+    if (!bot)
+        return false;
+    MlDuelPark const& park = (bot->GetTeamId() == TEAM_ALLIANCE) ? alliancePark : hordePark;
+    if (bot->GetMapId() != park.mapId)
+        return false;
+    return bot->GetDistance2d(park.x, park.y) <= static_cast<float>(maxMatchRange) + 20.f;
+}
+
+void MlDuelBracket::ForceToPark(Player* bot)
+{
+    if (!bot || !bot->IsInWorld() || bot->IsBeingTeleported())
+        return;
+    if (bot->duel || bot->InBattleground() || bot->InArena())
+        return;
 
     MlDuelPark const& park = (bot->GetTeamId() == TEAM_ALLIANCE) ? alliancePark : hordePark;
     // Small jitter so bots don't stack on one point.
     float jx = frand(-12.f, 12.f);
     float jy = frand(-12.f, 12.f);
     bot->TeleportTo(park.mapId, park.x + jx, park.y + jy, park.z, park.o);
+}
+
+bool MlDuelBracket::EnsureAtPark(Player* bot)
+{
+    if (!bot)
+        return false;
+    if (IsNearPark(bot) && AreaAllowsDuels(bot))
+        return true;
+    ForceToPark(bot);
     return true;
 }
 
