@@ -13,6 +13,7 @@
 #include "DBCStores.h"
 #include "Log.h"
 #include "MlDecisionLogger.h"
+#include "MotionMaster.h"
 #include "ObjectAccessor.h"
 #include "Player.h"
 #include "PlayerbotAI.h"
@@ -21,6 +22,7 @@
 #include "Random.h"
 #include "SpellDefines.h"
 #include "Timer.h"
+#include "WorldSession.h"
 
 namespace
 {
@@ -68,6 +70,7 @@ void MlDuelBracket::LoadFromConfig()
     allowedClassMask = sPlayerbotAIConfig.mlDuelBracketAllowedClassMask;
     maxMatchRange = sPlayerbotAIConfig.mlDuelBracketMaxMatchRange;
     rematchCooldownMs = sPlayerbotAIConfig.mlDuelBracketRematchCooldownMs;
+    resetCooldownsOnDuelEnd = sPlayerbotAIConfig.mlDuelBracketResetCooldownsOnDuelEnd;
 
     if (!ParsePairs(sPlayerbotAIConfig.mlDuelBracketPairs))
     {
@@ -86,12 +89,12 @@ void MlDuelBracket::LoadFromConfig()
 
     if (!ParsePark(sPlayerbotAIConfig.mlDuelBracketParkAlliance, alliancePark))
     {
-        // Elwynn Forest, east of Stormwind (duel-allowed outdoors)
-        alliancePark = {0, -9104.f, 416.f, 92.5f, 0.7f};
+        // Elwynn map 34.00, 51.00 (outside SW gates) -> world -9120, 355.
+        alliancePark = {0, -9120.f, 355.f, 93.2f, 0.7f};
     }
     if (!ParsePark(sPlayerbotAIConfig.mlDuelBracketParkHorde, hordePark))
     {
-        // Durotar, south of Orgrimmar
+        // Flat Durotar pad south of Orgrimmar.
         hordePark = {1, 1357.f, -4369.f, 26.5f, 3.5f};
     }
 
@@ -105,9 +108,9 @@ void MlDuelBracket::LoadFromConfig()
     if (enabled)
     {
         LOG_INFO("playerbots",
-                 "MlDuelBracket ON: {} pair(s), classMask=0x{:X}, parks A({} {:.0f},{:.0f}) H({} {:.0f},{:.0f})",
-                 pairs.size(), allowedClassMask, alliancePark.mapId, alliancePark.x, alliancePark.y, hordePark.mapId,
-                 hordePark.x, hordePark.y);
+                 "MlDuelBracket ON: {} pair(s), classMask=0x{:X}, resetCDs={}, parks A({} {:.0f},{:.0f}) H({} {:.0f},{:.0f})",
+                 pairs.size(), allowedClassMask, resetCooldownsOnDuelEnd ? 1 : 0, alliancePark.mapId, alliancePark.x,
+                 alliancePark.y, hordePark.mapId, hordePark.x, hordePark.y);
         ApplySpecProbOverrides();
     }
 }
@@ -229,7 +232,17 @@ bool MlDuelBracket::IsNearPark(Player* bot) const
     MlDuelPark const& park = (bot->GetTeamId() == TEAM_ALLIANCE) ? alliancePark : hordePark;
     if (bot->GetMapId() != park.mapId)
         return false;
-    return bot->GetDistance2d(park.x, park.y) <= static_cast<float>(maxMatchRange) + 20.f;
+    return bot->GetDistance2d(park.x, park.y) <= static_cast<float>(maxMatchRange) + 60.f;
+}
+
+void MlDuelBracket::EnsureUnmounted(Player* bot)
+{
+    if (!bot || !bot->IsInWorld() || !bot->IsMounted())
+        return;
+    if (bot->isMoving())
+        bot->StopMoving();
+    WorldPacket emptyPacket;
+    bot->GetSession()->HandleCancelMountAuraOpcode(emptyPacket);
 }
 
 void MlDuelBracket::ForceToPark(Player* bot)
@@ -238,12 +251,26 @@ void MlDuelBracket::ForceToPark(Player* bot)
         return;
     if (bot->duel || bot->InBattleground() || bot->InArena())
         return;
+    // Already in the duel zone: stay put. Re-scatter teleports caused mound hopping / flicker.
+    if (IsNearPark(bot) && AreaAllowsDuels(bot))
+        return;
 
     MlDuelPark const& park = (bot->GetTeamId() == TEAM_ALLIANCE) ? alliancePark : hordePark;
-    // Small jitter so bots don't stack on one point.
-    float jx = frand(-12.f, 12.f);
-    float jy = frand(-12.f, 12.f);
-    bot->TeleportTo(park.mapId, park.x + jx, park.y + jy, park.z, park.o);
+    // Mild scatter once on entry so the pad is not a single stack.
+    float const scatter = 18.f;
+    float jx = frand(-scatter, scatter);
+    float jy = frand(-scatter, scatter);
+    float x = park.x + jx;
+    float y = park.y + jy;
+    float z = park.z;
+    if (bot->GetMapId() == park.mapId && bot->GetMap())
+    {
+        float ground = bot->GetMap()->GetHeight(bot->GetPhaseMask(), x, y, z + 40.f);
+        if (ground > INVALID_HEIGHT)
+            z = ground + 0.5f;
+    }
+    bot->TeleportTo(park.mapId, x, y, z, park.o);
+    EnsureUnmounted(bot);
 }
 
 bool MlDuelBracket::EnsureAtPark(Player* bot)
@@ -254,6 +281,11 @@ bool MlDuelBracket::EnsureAtPark(Player* bot)
         return true;
     ForceToPark(bot);
     return true;
+}
+
+void MlDuelBracket::PatrolNearPark(Player* /*bot*/)
+{
+    // Intentionally empty: duel-farm bots stay clamped in the park zone (no wander teleports).
 }
 
 bool MlDuelBracket::IsResourceReady(Player* bot) const
@@ -268,9 +300,14 @@ bool MlDuelBracket::IsResourceReady(Player* bot) const
         return maxp == 0 || bot->GetPower(power) >= maxp;
     };
 
-    // DEC-024: Mana / Energy / Focus gated; Rage + Runic Power ungated.
-    if (!powerFull(POWER_MANA) || !powerFull(POWER_ENERGY) || !powerFull(POWER_FOCUS))
-        return false;
+    // Gate on every fillable pool except Rage / Runic Power (and Rune slots).
+    for (uint32 p = POWER_MANA; p < MAX_POWERS; ++p)
+    {
+        if (p == POWER_RAGE || p == POWER_RUNIC_POWER || p == POWER_RUNE)
+            continue;
+        if (!powerFull(Powers(p)))
+            return false;
+    }
 
     if (bot->getClass() == CLASS_DEATH_KNIGHT)
     {
@@ -284,17 +321,29 @@ bool MlDuelBracket::IsResourceReady(Player* bot) const
 
 void MlDuelBracket::RestoreForRematch(Player* bot)
 {
-    if (!bot || !bot->IsAlive())
+    if (!bot)
         return;
+
+    // Duel losers are usually at 1 HP, not dead; resurrect if a path killed them.
+    if (!bot->IsAlive())
+    {
+        bot->ResurrectPlayer(1.0f);
+        bot->SpawnCorpseBones();
+    }
 
     bot->SetFullHealth();
 
-    if (uint32 const maxMana = bot->GetMaxPower(POWER_MANA))
-        bot->SetPower(POWER_MANA, maxMana);
-    if (uint32 const maxEnergy = bot->GetMaxPower(POWER_ENERGY))
-        bot->SetPower(POWER_ENERGY, maxEnergy);
-    if (uint32 const maxFocus = bot->GetMaxPower(POWER_FOCUS))
-        bot->SetPower(POWER_FOCUS, maxFocus);
+    // Top every resource except Rage and Runic Power (DEC-024 + duel-farm reset).
+    for (uint32 p = POWER_MANA; p < MAX_POWERS; ++p)
+    {
+        if (p == POWER_RAGE || p == POWER_RUNIC_POWER)
+            continue;
+        // Rune readiness is cleared below; POWER_RUNE is not a fillable pool.
+        if (p == POWER_RUNE)
+            continue;
+        if (uint32 const maxp = bot->GetMaxPower(Powers(p)))
+            bot->SetPower(Powers(p), maxp);
+    }
 
     if (bot->getClass() == CLASS_DEATH_KNIGHT)
     {
@@ -302,10 +351,17 @@ void MlDuelBracket::RestoreForRematch(Player* bot)
             bot->SetRuneCooldown(i, 0);
     }
 
+    if (resetCooldownsOnDuelEnd)
+        bot->RemoveAllSpellCooldown();
+
     // Clear eat/drink (and sit) so rematch is not blocked by regen auras.
     bot->RemoveAurasWithInterruptFlags(AURA_INTERRUPT_FLAG_NOT_SEATED);
     if (bot->IsSitState())
         bot->SetStandState(UNIT_STAND_STATE_STAND);
+
+    // Lingering combat after a duel blocks rematch / new duel requests.
+    if (bot->IsInCombat())
+        bot->CombatStop(true);
 }
 
 bool MlDuelBracket::IsBracketCandidate(Player* bot, PlayerbotAI* botAI) const
@@ -346,6 +402,9 @@ bool MlDuelBracket::InitiateDuel(Player* challenger, Player* opponent)
     if (!AreaAllowsDuels(challenger) || !AreaAllowsDuels(opponent))
         return false;
 
+    EnsureUnmounted(challenger);
+    EnsureUnmounted(opponent);
+
     PlayerbotAI* ai = GET_PLAYERBOT_AI(challenger);
     if (!ai)
         return false;
@@ -376,66 +435,75 @@ bool MlDuelBracket::TryMatchOrQueue(PlayerbotAI* botAI)
         return false;
 
     uint32 now = getMSTime();
-    Player* partner = nullptr;
+    uint32 const mapId = bot->GetMapId();
+    ObjectGuid partnerGuid;
 
     {
         std::lock_guard<std::recursive_mutex> lock(mtx);
 
-        // Drop stale / invalid waiters
+        // Only resolve Player* for waiters on *this* map. Alliance (EK) and Horde (Kalimdor)
+        // parks run on different MapUpdater threads; reading/writing cross-map Player* under
+        // the shared waitlist caused STATUS_HEAP_CORRUPTION (0xC0000374) under load.
         waiting.erase(std::remove_if(waiting.begin(), waiting.end(),
                                      [&](Waiter const& w) {
                                          if (w.guid == bot->GetGUID())
                                              return true;
+                                         if (w.mapId != mapId)
+                                         {
+                                             // Time-expire other-map rows without touching their Player*.
+                                             return getMSTimeDiff(w.queuedAtMs, now) > 120000;
+                                         }
                                          Player* p = ObjectAccessor::FindPlayer(w.guid);
-                                         return !p || !p->IsInWorld() || p->duel || p->InArena() || p->InBattleground();
+                                         return !p || !p->IsInWorld() || p->GetMapId() != mapId || p->duel ||
+                                                p->InArena() || p->InBattleground();
                                      }),
                       waiting.end());
 
         for (auto it = waiting.begin(); it != waiting.end(); ++it)
         {
-            if (!(it->key == want))
+            if (!(it->key == want) || it->mapId != mapId)
                 continue;
             Player* cand = ObjectAccessor::FindPlayer(it->guid);
             PlayerbotAI* candAI = cand ? GET_PLAYERBOT_AI(cand) : nullptr;
-            if (!cand || !IsBracketCandidate(cand, candAI))
+            if (!cand || cand->GetMapId() != mapId || !IsBracketCandidate(cand, candAI))
                 continue;
-            EnsureAtPark(cand);
-            RestoreForRematch(cand);
-            if (!IsResourceReady(cand))
-                continue;
-            // Same faction preferred for open-world duel flag; allow cross-faction if both at park.
-            if (cand->GetMapId() != bot->GetMapId())
-                continue;
-            if (bot->GetDistance(cand) > static_cast<float>(maxMatchRange) + 40.f)
-            {
-                // Pull partner to our park pad.
-                EnsureAtPark(cand);
-            }
-            partner = cand;
+            // No CombatStop / Teleport while holding mtx — finish match setup outside the lock.
+            partnerGuid = cand->GetGUID();
             waiting.erase(it);
             break;
         }
 
-        if (!partner)
+        if (!partnerGuid)
         {
-            // Already waiting?
             bool present = false;
             for (Waiter const& w : waiting)
                 if (w.guid == bot->GetGUID())
                     present = true;
             if (!present)
-                waiting.push_back({bot->GetGUID(), myKey, now});
-            return false;
+                waiting.push_back({bot->GetGUID(), myKey, now, mapId});
         }
     }
+
+    if (!partnerGuid)
+        return false;
+
+    Player* partner = ObjectAccessor::FindPlayer(partnerGuid);
+    PlayerbotAI* partnerAI = partner ? GET_PLAYERBOT_AI(partner) : nullptr;
+    if (!partner || partner->GetMapId() != mapId || !IsBracketCandidate(partner, partnerAI))
+        return false;
+
+    EnsureAtPark(bot);
+    EnsureAtPark(partner);
+    RestoreForRematch(bot);
+    RestoreForRematch(partner);
+    if (!AreaAllowsDuels(bot) || !AreaAllowsDuels(partner) || !IsResourceReady(bot) || !IsResourceReady(partner))
+        return false;
+    if (bot->GetDistance(partner) > static_cast<float>(maxMatchRange) + 40.f)
+        EnsureAtPark(partner);
 
     // Lower guid initiates to avoid double-cast races.
     Player* challenger = bot->GetGUID().GetCounter() < partner->GetGUID().GetCounter() ? bot : partner;
     Player* opponent = challenger == bot ? partner : bot;
-    EnsureAtPark(challenger);
-    EnsureAtPark(opponent);
-    RestoreForRematch(challenger);
-    RestoreForRematch(opponent);
     return InitiateDuel(challenger, opponent);
 }
 
@@ -454,6 +522,8 @@ void MlDuelBracket::OnDuelStart(Player* p1, Player* p2)
 
     ClearWaiting(p1->GetGUID());
     ClearWaiting(p2->GetGUID());
+    EnsureUnmounted(p1);
+    EnsureUnmounted(p2);
 
     uint32 matchId = 0;
     {
@@ -463,6 +533,9 @@ void MlDuelBracket::OnDuelStart(Player* p1, Player* p2)
             nextDuelMatchId = 1;
         duelMatchIds[p1->GetGUID().GetCounter()] = matchId;
         duelMatchIds[p2->GetGUID().GetCounter()] = matchId;
+        uint32 const matches = static_cast<uint32>(duelMatchIds.size() / 2);
+        if (matches > peakMatchCount)
+            peakMatchCount = matches;
     }
     sMlDecisionLogger.RegisterDuelMatch(p1->GetGUID(), p2->GetGUID(), matchId);
     sMlDecisionLogger.LogDuelStartSnapshot(p1, matchId);
@@ -490,4 +563,50 @@ void MlDuelBracket::OnDuelEnd(Player* winner, Player* loser, DuelCompleteType /*
             duelMatchIds.erase(loser->GetGUID().GetCounter());
     }
 
+    if (winner)
+        RestoreForRematch(winner);
+    if (loser)
+        RestoreForRematch(loser);
+}
+
+uint32 MlDuelBracket::GetTrackedMatchCount() const
+{
+    std::lock_guard<std::recursive_mutex> lock(mtx);
+    return static_cast<uint32>(duelMatchIds.size() / 2);
+}
+
+uint32 MlDuelBracket::GetWaitingCount() const
+{
+    std::lock_guard<std::recursive_mutex> lock(mtx);
+    return static_cast<uint32>(waiting.size());
+}
+
+void MlDuelBracket::PrintSaturation(uint32 onlineEligible, uint32 botsInDuel) const
+{
+    if (!enabled)
+        return;
+
+    uint32 const matches = GetTrackedMatchCount();
+    uint32 waitingN = 0;
+    uint32 waitWar = 0;
+    uint32 waitMage = 0;
+    {
+        std::lock_guard<std::recursive_mutex> lock(mtx);
+        waitingN = static_cast<uint32>(waiting.size());
+        for (Waiter const& w : waiting)
+        {
+            if (w.key.cls == CLASS_WARRIOR)
+                ++waitWar;
+            else if (w.key.cls == CLASS_MAGE)
+                ++waitMage;
+        }
+    }
+
+    float const satPct =
+        onlineEligible > 0 ? (100.f * static_cast<float>(botsInDuel) / static_cast<float>(onlineEligible)) : 0.f;
+
+    LOG_INFO("playerbots",
+             "MlDuelBracket saturation: in_duel={} matches={} waiting={} (W={} M={}) eligible={} sat={:.1f}% "
+             "peak_matches={}",
+             botsInDuel, matches, waitingN, waitWar, waitMage, onlineEligible, satPct, peakMatchCount);
 }

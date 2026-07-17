@@ -41,6 +41,9 @@ bool AcceptDuelAction::Execute(Event event)
         return false;
     }
 
+    if (sMlDuelBracket.IsEnabled())
+        sMlDuelBracket.EnsureUnmounted(bot);
+
     WorldPacket packet(CMSG_DUEL_ACCEPTED, 8);
     packet << flagGuid;
     bot->GetSession()->HandleDuelAcceptedOpcode(packet);

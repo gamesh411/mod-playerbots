@@ -283,6 +283,7 @@ void RandomPlayerbotMgr::UpdateAIInternal(uint32 /*elapsed*/, bool /*minimal*/)
         totalPmo->finish();
 
     totalPmo = sPerfMonitor.start(PERF_MON_TOTAL, "RandomPlayerbotMgr::FullTick");
+    ResetDuelRegearBudget();
 
     if (!sPlayerbotAIConfig.randomBotAutologin || !sPlayerbotAIConfig.enabled)
         return;
@@ -636,6 +637,20 @@ bool RandomPlayerbotMgr::IsAccountType(uint32 accountId, uint8 accountType)
 // reached after Phase 2, the function goes back to log-in Alliance bots and reach maxAllowedBotCount. This is done
 // because not every account is guaranteed 5A/5H bots, so the true ratio might be skewed by few percentages. Finally,
 // Phase 4 is reached if and only if the value of RandomBotAccountCount is lower than it should.
+void RandomPlayerbotMgr::ResetDuelRegearBudget()
+{
+    // A few full factory Randomize calls per mgr tick — avoids login-storm ACCESS_VIOLATION.
+    duelRegearBudget = 3;
+}
+
+bool RandomPlayerbotMgr::ConsumeDuelRegearSlot()
+{
+    if (!duelRegearBudget)
+        return false;
+    --duelRegearBudget;
+    return true;
+}
+
 uint32 RandomPlayerbotMgr::AddRandomBots()
 {
     uint32 maxAllowedBotCount = GetEventValue(0, "bot_count");
@@ -733,6 +748,10 @@ uint32 RandomPlayerbotMgr::AddRandomBots()
                 hordeChars.push_back(charInfo);
         }
 
+        // Duel-farm class balance: track pending logins this pass (currentBots guids are not online yet).
+        uint32 pendingWarriors = 0;
+        uint32 pendingMages = 0;
+
         // Lambda to handle bot login logic
         auto tryLoginBot = [&](const CharacterInfo& charInfo) -> bool
         {
@@ -746,6 +765,27 @@ uint32 RandomPlayerbotMgr::AddRandomBots()
                 return false;
             }
 
+            // Duel bracket: refuse logging in more of the majority class (Arms vs Frost needs ~1:1).
+            if (sMlDuelBracket.IsEnabled() &&
+                (charInfo.rClass == CLASS_WARRIOR || charInfo.rClass == CLASS_MAGE))
+            {
+                uint32 onlineW = pendingWarriors;
+                uint32 onlineM = pendingMages;
+                for (PlayerBotMap::const_iterator it = playerBots.begin(); it != playerBots.end(); ++it)
+                {
+                    if (!it->second)
+                        continue;
+                    if (it->second->getClass() == CLASS_WARRIOR)
+                        ++onlineW;
+                    else if (it->second->getClass() == CLASS_MAGE)
+                        ++onlineM;
+                }
+                if (charInfo.rClass == CLASS_WARRIOR && onlineW > onlineM + 1)
+                    return false;
+                if (charInfo.rClass == CLASS_MAGE && onlineM > onlineW + 1)
+                    return false;
+            }
+
             uint32 add_time = sPlayerbotAIConfig.enablePeriodicOnlineOffline
                                 ? urand(sPlayerbotAIConfig.minRandomBotInWorldTime,
                                         sPlayerbotAIConfig.maxRandomBotInWorldTime)
@@ -754,6 +794,10 @@ uint32 RandomPlayerbotMgr::AddRandomBots()
             SetEventValue(charInfo.guid, "add", 1, add_time);
             SetEventValue(charInfo.guid, "logout", 0, 0);
             currentBots.insert(charInfo.guid);
+            if (charInfo.rClass == CLASS_WARRIOR)
+                ++pendingWarriors;
+            else if (charInfo.rClass == CLASS_MAGE)
+                ++pendingMages;
 
             return true;
         };
@@ -1375,14 +1419,32 @@ bool RandomPlayerbotMgr::ProcessBot(uint32 bot)
         // do not randomize or teleport immediately after server start (prevent lagging)
         if (!GetEventValue(bot, "randomize"))
         {
-            randomTime = urand(3, std::max(4, static_cast<int>(randomBotUpdateInterval * 0.4)));
-            ScheduleRandomize(bot, randomTime);
+            if (sMlDuelBracket.IsEnabled())
+            {
+                // Duel-farm: never stampede Randomize() a few seconds after mass login.
+                randomTime = urand(sPlayerbotAIConfig.minRandomBotRandomizeTime,
+                                   sPlayerbotAIConfig.maxRandomBotRandomizeTime);
+                ScheduleRandomize(bot, randomTime);
+            }
+            else
+            {
+                randomTime = urand(3, std::max(4, static_cast<int>(randomBotUpdateInterval * 0.4)));
+                ScheduleRandomize(bot, randomTime);
+            }
         }
         if (!GetEventValue(bot, "teleport"))
         {
-            randomTime = urand(std::max(7, static_cast<int>(randomBotUpdateInterval * 0.7)),
-                               std::max(14, static_cast<int>(randomBotUpdateInterval * 1.4)));
-            ScheduleTeleport(bot, randomTime);
+            if (sMlDuelBracket.IsEnabled())
+            {
+                // Spread first park-check; ProcessBot only ForceToPark (no Refresh).
+                ScheduleTeleport(bot, urand(300, 1800) + (bot % 600));
+            }
+            else
+            {
+                randomTime = urand(std::max(7, static_cast<int>(randomBotUpdateInterval * 0.7)),
+                                   std::max(14, static_cast<int>(randomBotUpdateInterval * 1.4)));
+                ScheduleTeleport(bot, randomTime);
+            }
         }
 
         return true;
@@ -1504,38 +1566,59 @@ bool RandomPlayerbotMgr::ProcessBot(Player* bot)
 
     if (idleBot)
     {
+        // Duel-farm: newly created bots often login undergeared. Do NOT call RandomizeFirst
+        // (it re-rolls level and runs InitArenaTeam). Re-equip at current level, throttled.
+        if (sMlDuelBracket.IsEnabled() && !bot->duel && !bot->IsInCombat() &&
+            !GetEventValue(botId, "duel_regear"))
+        {
+            uint8 filled = 0;
+            for (uint8 slot = EQUIPMENT_SLOT_START; slot < EQUIPMENT_SLOT_END; ++slot)
+            {
+                if (slot == EQUIPMENT_SLOT_BODY || slot == EQUIPMENT_SLOT_TABARD)
+                    continue;
+                if (bot->GetItemByPos(INVENTORY_SLOT_BAG_0, slot))
+                    ++filled;
+            }
+            if (filled < 5)
+            {
+                // Cap stampede during mass login (ACCESS_VIOLATION seen with hundreds of RandomizeFirst).
+                if (sRandomPlayerbotMgr.ConsumeDuelRegearSlot())
+                {
+                    LOG_INFO("playerbots", "Bot #{} <{}>: duel-farm undergeared ({} slots) - regear at lvl {}", botId,
+                             bot->GetName(), filled, bot->GetLevel());
+                    PlayerbotFactory factory(bot, bot->GetLevel());
+                    factory.Randomize(false);
+                    sMlDuelBracket.ForceToPark(bot);
+                    SetEventValue(botId, "duel_regear", 1, 86400);
+                    ScheduleRandomize(botId,
+                                      urand(sPlayerbotAIConfig.minRandomBotRandomizeTime,
+                                            sPlayerbotAIConfig.maxRandomBotRandomizeTime));
+                    return true;
+                }
+            }
+        }
+
         // randomize
         uint32 randomize = GetEventValue(botId, "randomize");
         if (!randomize)
         {
-            // bool randomiser = true;
-            // if (player->GetGuildId())
-            // {
-            //     if (Guild* guild = sGuildMgr->GetGuildById(player->GetGuildId()))
-            //     {
-            //         if (guild->GetLeaderGUID() == player->GetGUID())
-            //         {
-            //             for (std::vector<Player*>::iterator i = players.begin(); i != players.end(); ++i)
-            //                 GuildTaskMgr::instance().Update(*i, player);
-            //         }
-
-            //         uint32 accountId = sCharacterCache->GetCharacterAccountIdByGuid(guild->GetLeaderGUID());
-            //         if (!sPlayerbotAIConfig.IsInRandomAccountList(accountId))
-            //         {
-            //             uint8 rank = player->GetRank();
-            //             randomiser = rank < 4 ? false : true;
-            //         }
-            //     }
-            // }
-            // if (randomiser)
-            // {
-            Randomize(bot);
-            LOG_DEBUG("playerbots", "Bot #{} {}:{} <{}>: randomized", botId,
-                      bot->GetTeamId() == TEAM_ALLIANCE ? "A" : "H", bot->GetLevel(), bot->GetName());
-            uint32 randomTime =
-                urand(sPlayerbotAIConfig.minRandomBotRandomizeTime, sPlayerbotAIConfig.maxRandomBotRandomizeTime);
-            ScheduleRandomize(botId, randomTime);
-            return true;
+            if (sMlDuelBracket.IsEnabled())
+            {
+                // Gear is set at creation / throttled undergeared path — skip mass Randomize.
+                ScheduleRandomize(botId,
+                                  urand(sPlayerbotAIConfig.minRandomBotRandomizeTime,
+                                        sPlayerbotAIConfig.maxRandomBotRandomizeTime));
+            }
+            else
+            {
+                Randomize(bot);
+                LOG_DEBUG("playerbots", "Bot #{} {}:{} <{}>: randomized", botId,
+                          bot->GetTeamId() == TEAM_ALLIANCE ? "A" : "H", bot->GetLevel(), bot->GetName());
+                uint32 randomTime =
+                    urand(sPlayerbotAIConfig.minRandomBotRandomizeTime, sPlayerbotAIConfig.maxRandomBotRandomizeTime);
+                ScheduleRandomize(botId, randomTime);
+                return true;
+            }
         }
 
         // uint32 changeStrategy = GetEventValue(bot, "change_strategy");
@@ -1549,20 +1632,19 @@ bool RandomPlayerbotMgr::ProcessBot(Player* bot)
         uint32 teleport = GetEventValue(botId, "teleport");
         if (!teleport)
         {
-            Refresh(bot);
-            // AutoTeleportForLevel only gates level-up maintenance; the idle teleport
-            // event always fired RandomTeleportForLevel and scattered duel-farm bots.
             if (sMlDuelBracket.IsEnabled())
             {
-                LOG_DEBUG("playerbots", "Bot #{} <{}>: duel-bracket park teleport", botId, bot->GetName());
+                // Do NOT Refresh() here — mass login was Refresh+ForceToPark on all 450 bots and
+                // produced STATUS_HEAP_CORRUPTION (0xC0000374). Park stickiness only.
                 sMlDuelBracket.ForceToPark(bot);
-                sMlDuelBracket.RestoreForRematch(bot);
+                // Rare straggler check; ForceToPark is a no-op when already in-zone.
+                ScheduleTeleport(botId, urand(1800, 3600) + (botId % 600));
+                return true;
             }
-            else
-            {
-                LOG_DEBUG("playerbots", "Bot #{} <{}>: teleport for level and refresh", botId, bot->GetName());
-                RandomTeleportForLevel(bot);
-            }
+
+            Refresh(bot);
+            LOG_DEBUG("playerbots", "Bot #{} <{}>: teleport for level and refresh", botId, bot->GetName());
+            RandomTeleportForLevel(bot);
             uint32 time = urand(sPlayerbotAIConfig.minRandomBotTeleportInterval,
                                 sPlayerbotAIConfig.maxRandomBotTeleportInterval);
             ScheduleTeleport(botId, time);
@@ -2747,6 +2829,11 @@ void RandomPlayerbotMgr::PrintStats()
     uint32 engine_noncombat = 0;
     uint32 engine_combat = 0;
     uint32 engine_dead = 0;
+    uint32 inDuel = 0;
+    uint32 duelEligible = 0;
+    uint32 undergeared = 0;
+    uint32 onlineWarriors = 0;
+    uint32 onlineMages = 0;
     std::unordered_map<NewRpgStatus, int> rpgStatusCount;
     // static NewRpgStatistic rpgStasticTotal;
     std::unordered_map<uint32, int> zoneCount;
@@ -2762,6 +2849,10 @@ void RandomPlayerbotMgr::PrintStats()
 
         ++perRace[bot->getRace()];
         ++perClass[bot->getClass()];
+        if (bot->getClass() == CLASS_WARRIOR)
+            ++onlineWarriors;
+        else if (bot->getClass() == CLASS_MAGE)
+            ++onlineMages;
 
         lvlPerClass[bot->getClass()] += bot->GetLevel();
         lvlPerRace[bot->getRace()] += bot->GetLevel();
@@ -2809,6 +2900,26 @@ void RandomPlayerbotMgr::PrintStats()
 
         if (bot->InBattleground() || bot->InArena())
             ++inBg;
+
+        if (bot->duel)
+            ++inDuel;
+
+        if (sMlDuelBracket.IsEnabled() && sMlDuelBracket.IsBotEligibleSpec(bot))
+            ++duelEligible;
+
+        // Count critically undergeared bots (missing most equipment slots).
+        {
+            uint8 filled = 0;
+            for (uint8 slot = EQUIPMENT_SLOT_START; slot < EQUIPMENT_SLOT_END; ++slot)
+            {
+                if (slot == EQUIPMENT_SLOT_BODY || slot == EQUIPMENT_SLOT_TABARD)
+                    continue;
+                if (bot->GetItemByPos(INVENTORY_SLOT_BAG_0, slot))
+                    ++filled;
+            }
+            if (filled < 5)
+                ++undergeared;
+        }
 
         if (bot->HasFlag(PLAYER_FLAGS, PLAYER_FLAGS_RESTING))
             ++rest;
@@ -2903,9 +3014,18 @@ void RandomPlayerbotMgr::PrintStats()
     LOG_INFO("playerbots", "    In flight: {}", inFlight);
     LOG_INFO("playerbots", "    On mount: {}", mounted);
     LOG_INFO("playerbots", "    In combat: {}", combat);
+    LOG_INFO("playerbots", "    In duel: {}", inDuel);
+    LOG_INFO("playerbots", "    Undergeared (<5 slots): {}", undergeared);
     LOG_INFO("playerbots", "    In BG: {}", inBg);
     LOG_INFO("playerbots", "    In Rest: {}", rest);
     LOG_INFO("playerbots", "    Dead: {}", dead);
+
+    if (sMlDuelBracket.IsEnabled())
+    {
+        LOG_INFO("playerbots", "Duel-farm class balance: warriors={} mages={} (pair cap ≈ {})", onlineWarriors,
+                 onlineMages, std::min(onlineWarriors, onlineMages));
+        sMlDuelBracket.PrintSaturation(duelEligible, inDuel);
+    }
 
     if (sPlayerbotAIConfig.enableNewRpgStrategy)
     {
@@ -3055,7 +3175,7 @@ void RandomPlayerbotMgr::ChangeStrategyOnce(Player* player)
     {
         LOG_INFO("playerbots", "Bot #{} <{}>: duel-bracket park", bot, player->GetName().c_str());
         sMlDuelBracket.ForceToPark(player);
-        Refresh(player);
+        // No Refresh — factory.Refresh on hundreds of bots after login caused heap corruption.
         return;
     }
 

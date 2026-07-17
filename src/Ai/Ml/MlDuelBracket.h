@@ -62,6 +62,13 @@ public:
     void RestoreForRematch(Player* bot);
     // Always teleport to the faction park pad (duel-farm stickiness).
     void ForceToPark(Player* bot);
+    void EnsureUnmounted(Player* bot);
+
+    // Concurrent duel farm metrics (for PrintStats / saturation tuning).
+    uint32 GetTrackedMatchCount() const;
+    uint32 GetWaitingCount() const;
+    uint32 GetPeakMatchCount() const { return peakMatchCount; }
+    void PrintSaturation(uint32 onlineEligible, uint32 botsInDuel) const;
 
     void OnDuelStart(Player* p1, Player* p2);
     void OnDuelEnd(Player* winner, Player* loser, DuelCompleteType type);
@@ -81,6 +88,7 @@ private:
     bool ParsePark(std::string const& raw, MlDuelPark& out);
     bool EnsureAtPark(Player* bot);
     bool IsNearPark(Player* bot) const;
+    void PatrolNearPark(Player* bot);
     bool AreaAllowsDuels(Player* bot) const;
     bool IsBracketCandidate(Player* bot, PlayerbotAI* botAI) const;
     bool IsIdleEligible(Player* bot, PlayerbotAI* botAI) const;
@@ -91,6 +99,7 @@ private:
     uint32 allowedClassMask = 0;
     uint32 maxMatchRange = 80;
     uint32 rematchCooldownMs = 500;
+    bool resetCooldownsOnDuelEnd = false;
     std::vector<MlDuelPair> pairs;
     MlDuelPark alliancePark;
     MlDuelPark hordePark;
@@ -100,12 +109,16 @@ private:
         ObjectGuid guid;
         MlDuelSpecKey key;
         uint32 queuedAtMs = 0;
+        // Map of the queueing bot. Matching must stay same-map: Alliance (0) and Horde (1)
+        // parks update on different Map threads — never dereference cross-map Player*.
+        uint32 mapId = 0;
     };
     mutable std::recursive_mutex mtx;
     std::vector<Waiter> waiting;
     std::unordered_map<uint32, uint32> lastDuelEndMs;  // guid counter -> time
     std::unordered_map<uint32, uint32> duelMatchIds;   // guid counter -> synthetic match id
     uint32 nextDuelMatchId = 1;
+    uint32 peakMatchCount = 0;
 };
 
 #define sMlDuelBracket MlDuelBracket::instance()

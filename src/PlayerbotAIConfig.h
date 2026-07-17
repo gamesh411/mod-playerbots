@@ -363,6 +363,8 @@ public:
     uint32 mlDuelBracketAllowedClassMask;
     uint32 mlDuelBracketMaxMatchRange;
     uint32 mlDuelBracketRematchCooldownMs;
+    // When true, RestoreForRematch also clears spell cooldowns (default off).
+    bool mlDuelBracketResetCooldownsOnDuelEnd;
 
     bool summonWhenGroup;
     ShowHideCosmetic randomBotShowHelmet;

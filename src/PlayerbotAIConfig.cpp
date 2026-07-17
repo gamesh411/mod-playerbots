@@ -484,13 +484,15 @@ bool PlayerbotAIConfig::Initialize()
     mlDuelBracketSoftmaxTemperature =
         sConfigMgr->GetOption<float>("AiPlayerbot.MlDuelBracket.SoftmaxTemperature", 10.0f);
     mlDuelBracketParkAlliance =
-        sConfigMgr->GetOption<std::string>("AiPlayerbot.MlDuelBracket.ParkAlliance", "0,-9104,416,92.5,0.7");
+        sConfigMgr->GetOption<std::string>("AiPlayerbot.MlDuelBracket.ParkAlliance", "0,-9120,355,93.2,0.7");
     mlDuelBracketParkHorde =
         sConfigMgr->GetOption<std::string>("AiPlayerbot.MlDuelBracket.ParkHorde", "1,1357,-4369,26.5,3.5");
     mlDuelBracketAllowedClassMask = sConfigMgr->GetOption<uint32>("AiPlayerbot.MlDuelBracket.AllowedClassMask", 0);
     mlDuelBracketMaxMatchRange = sConfigMgr->GetOption<uint32>("AiPlayerbot.MlDuelBracket.MaxMatchRange", 80);
     mlDuelBracketRematchCooldownMs =
         sConfigMgr->GetOption<uint32>("AiPlayerbot.MlDuelBracket.RematchCooldownMs", 500);
+    mlDuelBracketResetCooldownsOnDuelEnd =
+        sConfigMgr->GetOption<bool>("AiPlayerbot.MlDuelBracket.ResetCooldownsOnDuelEnd", false);
     sMlDuelBracket.LoadFromConfig();
     if (!mlModelPathDuel.empty())
         sMlScorer.Reload();
