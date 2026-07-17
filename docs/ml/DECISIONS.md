@@ -241,3 +241,23 @@ Health remains **100%** for both participants (DEC-023). Major ability CDs stay 
 **Why:** Same shape as Warrior Rage: spend-to-zero combat meters are not “full to start”; DK runes are the ready pool analogous to a Rogue’s Energy bar being full.  
 **Consequences:** [Execute duel-farm profile + full-resource rematch (DEC-023)](https://github.com/gamesh411/mod-playerbots/issues/17) implements this split (not “full Runic Power”).
 
+### DEC-025 — 2026-07-17 — S1 scripted-vocab ranker: train / deploy / freeze
+**Status:** accepted  
+**Context:** [S1: ranking head over scripted action vocabulary](https://github.com/gamesh411/mod-playerbots/issues/10). S0 Softmax-stock (DEC-022) and duel-farm (DEC-023/024) land data; S1 must improve on stock within the same scripted **queue** vocab (DEC-018), stay replayable (DEC-019), and leave stock as a scaffold—not a permanent teacher. Fine-grained ability-level / multi-logit ranking head over spellbook remains **S2** (DEC-011 target architecture deferred past S1 freeze).
+
+**Decision:**
+
+| Piece | Rule |
+|-------|------|
+| Vocab / policy | `SpellPool=queue`, `ActionPolicy=ranker`; ignore heuristic relevance for choice (DEC-018). Movement stays scripted. |
+| Scorer (S1 freeze) | **Per-candidate scalar** (`ScoreDuel` / existing PBML path). Softmax or argmax over those scores. True multi-logit ranking head + ability-level vocab → **S2**. |
+| Farm exploration | Softmax over model scores; **τ=10** farm / **τ≤0** demo-freeze; shared conf `MlDuelBracket.SoftmaxTemperature` (same dial as S0). No ε-greedy for S1. |
+| Models | **Per-class** PBML (e.g. warrior / mage). Opponent class is features, not a matchup file. Same packaging when the class pool grows later. |
+| Train recipe | (1) **Bootstrap:** reward / delayed outcome on S0 Softmax-stock CSVs. (2) **DAgger ×2:** ranker on-policy rollouts; label each state with **Softmax-stock τ=0** expert pick among legal queue candidates; train to imitate (CE or score-up expert). (3) **Expert-off:** further on-policy ranker farm; train on reward/win only — **no** stock expert. Full **aggregate** retrain each round (never drop prior rows). |
+| Freeze gate | Both seats must improve: Arms-ranker↔Frost-stock and Arms-stock↔Frost-ranker winrates each clear **stock↔stock baseline + δ** (same bracket/conf; Softmax τ=0 stock). δ and duel count are freeze-time ops, recorded on the stage card — not a fixed constant here. Absolute 50% is **not** the gate (class imbalance). |
+| Stage artifacts | DEC-019 layout: `artifacts/duel/s1/…`, conf profile `duel-s1`, git tag `stage/s1-<slug>`, stage card; manifest lists **per-class** PBML release assets + sha256. Demo conf: `ActionPolicy=ranker`, `SoftmaxTemperature=0` (or ≤0), `SpellPool=queue`. |
+
+**Why:** Reward bootstrap alone is off-policy under stock; pure imitation never beats stock; DAgger with τ=0 stock on learner states keeps the scripted basin, then expert-off supplies winrate pressure to leave the teacher. Shared Softmax τ matches S0 ops. Per-class models scale to a wider duel pool without matchup explosion. Scalar S1 keeps the shippable scorer; spellbook-level granularity belongs at S2.
+
+**Consequences:** Execute follow-on implements ranker Softmax(τ), expert-action logging for DAgger, trainer imitate + aggregate loop, per-class deploy paths, and eval harness vs stock↔stock baseline. Orchestration stage replay remains [#13](https://github.com/gamesh411/mod-playerbots/issues/13). S2 design [#11](https://github.com/gamesh411/mod-playerbots/issues/11) inherits per-class packaging and winrate-uplift freeze pattern; adds spellbook vocab + ranking head.
+
