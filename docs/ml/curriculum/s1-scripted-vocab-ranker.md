@@ -1,6 +1,6 @@
 # Stage S1 — Ranker on scripted vocabulary
 
-> Design locked in **DEC-025** / [#10](https://github.com/gamesh411/mod-playerbots/issues/10). Freeze fields (artifact paths / git tag) per [#8](https://github.com/gamesh411/mod-playerbots/issues/8) when stage freezes. Fine-grained spellbook choice is **S2**, not S1.
+> Design locked in **DEC-025** / [#10](https://github.com/gamesh411/mod-playerbots/issues/10). Freeze fields (artifact paths / git tag) per [#8](https://github.com/gamesh411/mod-playerbots/issues/8) when stage freezes. Fine-grained spellbook / multi-logit choice is **S2** (**DEC-026**), not S1.
 
 | Field | Value |
 |-------|--------|

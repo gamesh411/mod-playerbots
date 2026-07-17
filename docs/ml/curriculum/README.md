@@ -16,7 +16,7 @@ Showcase learning on **Arms vs Frost** duels. Each stage freezes policy + conf +
 |-------|----------------------|---------------|
 | S0 | [#9](https://github.com/gamesh411/mod-playerbots/issues/9) | not frozen |
 | S1 | [#10](https://github.com/gamesh411/mod-playerbots/issues/10) | not frozen |
-| S2 | [#11](https://github.com/gamesh411/mod-playerbots/issues/11) | not frozen |
+| S2 | [#11](https://github.com/gamesh411/mod-playerbots/issues/11) (design); execute follow-on | design locked — not frozen |
 
 ### Out of scope (this curriculum)
 
