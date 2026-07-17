@@ -275,10 +275,14 @@ bool Engine::DoNextAction(Unit* /*unit*/, uint32 /*depth*/, bool minimal)
         bool const duelPolicy = inDuel && sPlayerbotAIConfig.mlDuelBracketEnabled;
         bool const rankerReady =
             duelPolicy && policy == "ranker" && self && sMlScorer.HasModelFor(self->getClass());
+        // DEC-025 mixed seats: ActionPolicy=ranker with no PBML for this class uses Softmax-stock
+        // (not Peek). Clear one per-class path + SoftmaxTemperature≤0 for freeze eval.
+        bool const useSoftmaxStock =
+            duelPolicy && (policy == "softmax-stock" || (policy == "ranker" && !rankerReady));
         std::string duelExpertAction;
         // DEC-022 / DEC-025: Softmax(τ) over stock relevance or ScoreDuel.
         // Empty support falls through to stock Peek (scripted movement / meta).
-        if (duelPolicy && (policy == "softmax-stock" || rankerReady))
+        if (duelPolicy && (policy == "softmax-stock" || policy == "ranker"))
         {
             std::vector<SoftmaxCandidate> support;
             AiObjectContext* context = aiObjectContext;
@@ -297,7 +301,7 @@ bool Engine::DoNextAction(Unit* /*unit*/, uint32 /*depth*/, bool minimal)
                     continue;
 
                 float const stockLogit = candidate->getRelevance();
-                if (policy == "softmax-stock")
+                if (useSoftmaxStock)
                 {
                     float postMultiplier = stockLogit;
                     for (Multiplier* multiplier : multipliers)

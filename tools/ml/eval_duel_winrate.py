@@ -8,6 +8,11 @@ using the last terminal≠0 row for that bot in the match.
 Usage:
   python eval_duel_winrate.py --csv ml_decisions_duel_v3.csv --label stock-stock
   python eval_duel_winrate.py --csv ml_decisions_duel_v4.csv --label ranker-farm --baseline-csv ml_decisions_duel_v3.csv
+  # Mixed-seat freeze (one CSV per seat config):
+  python eval_duel_winrate.py --csv ml_decisions_duel_mixed_arms_ranker.csv --ranker-seat warrior \\
+    --baseline-csv ml_decisions_duel_v3.csv --delta 0.02
+  python eval_duel_winrate.py --csv ml_decisions_duel_mixed_frost_ranker.csv --ranker-seat mage \\
+    --baseline-csv ml_decisions_duel_v3.csv --delta 0.02
 """
 
 from __future__ import annotations
@@ -17,7 +22,7 @@ import csv
 from collections import defaultdict
 from pathlib import Path
 
-from train_ranker import SELF_CLASS_F, resolve_fieldnames
+from train_ranker import resolve_fieldnames
 
 CLASS_NAMES = {
     12: "warrior",
@@ -109,6 +114,12 @@ def main():
     ap.add_argument("--label", type=str, default="eval")
     ap.add_argument("--baseline-csv", type=Path, default=None, help="stock↔stock reference CSV")
     ap.add_argument("--delta", type=float, default=0.02, help="WR uplift gate δ (fraction)")
+    ap.add_argument(
+        "--ranker-seat",
+        choices=("warrior", "mage"),
+        default=None,
+        help="DEC-025 mixed-seat: gate only this class vs baseline (other seat is Softmax-stock)",
+    )
     args = ap.parse_args()
 
     stats = match_outcomes(args.csv)
@@ -117,9 +128,11 @@ def main():
     if args.baseline_csv:
         base = match_outcomes(args.baseline_csv)
         print_stats("baseline (stock-stock)", base)
-        print("\n=== uplift vs baseline (same-policy seats; freeze needs mixed seats) ===")
+        seats = (args.ranker_seat,) if args.ranker_seat else ("warrior", "mage")
+        mode = "mixed-seat" if args.ranker_seat else "same-policy"
+        print(f"\n=== uplift vs baseline ({mode}; delta={args.delta*100:.0f}pp) ===")
         both_clear = True
-        for name in ("warrior", "mage"):
+        for name in seats:
             wr = winrate(stats[name])
             bwr = winrate(base[name])
             if wr is None or bwr is None:
@@ -133,8 +146,12 @@ def main():
                 f"  {name}: {wr*100:.1f}% vs {bwr*100:.1f}%  d={uplift*100:+.1f}pp  "
                 f"{'PASS' if ok else 'FAIL'} (need >={args.delta*100:.0f}pp)"
             )
-        print(f"\nSame-policy gate both seats: {'PASS' if both_clear else 'FAIL'}")
-        print("Note: DEC-025 freeze is mixed seats (ranker vs stock), not ranker-ranker.")
+        if args.ranker_seat:
+            print(f"\nMixed-seat gate ({args.ranker_seat} ranker): {'PASS' if both_clear else 'FAIL'}")
+            print("Need both arms-ranker and frost-ranker CSVs to clear for DEC-025 freeze.")
+        else:
+            print(f"\nSame-policy gate both seats: {'PASS' if both_clear else 'FAIL'}")
+            print("Note: DEC-025 freeze is mixed seats (ranker vs stock), not ranker-ranker.")
 
 
 if __name__ == "__main__":
