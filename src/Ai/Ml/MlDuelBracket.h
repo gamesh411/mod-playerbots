@@ -60,6 +60,8 @@ public:
     // DEC-023/024: 100% HP + regenerative/ready pools (not Rage / Runic Power).
     bool IsResourceReady(Player* bot) const;
     void RestoreForRematch(Player* bot);
+    // Always teleport to the faction park pad (duel-farm stickiness).
+    void ForceToPark(Player* bot);
 
     void OnDuelStart(Player* p1, Player* p2);
     void OnDuelEnd(Player* winner, Player* loser, DuelCompleteType type);
@@ -78,6 +80,7 @@ private:
     bool ParsePairs(std::string const& raw);
     bool ParsePark(std::string const& raw, MlDuelPark& out);
     bool EnsureAtPark(Player* bot);
+    bool IsNearPark(Player* bot) const;
     bool AreaAllowsDuels(Player* bot) const;
     bool IsBracketCandidate(Player* bot, PlayerbotAI* botAI) const;
     bool IsIdleEligible(Player* bot, PlayerbotAI* botAI) const;
