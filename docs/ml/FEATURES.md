@@ -9,7 +9,8 @@
 5. **Heuristics may use features; features must not depend on MLP output** — no feedback loops in the vector.
 6. **Document before merging code** — add a row here, then implement.
 
-Schema / PBML input today: `ML_INPUT_DIM = CF_FEATURE_COUNT + AF_COUNT` (**70 + 8 = 78**).  
+Schema / PBML input today: `ML_INPUT_DIM = CF_FEATURE_COUNT + AF_COUNT + AF_ID_COUNT` (**70 + 8 + 4 = 82**).  
+Pre-action-id duel PBML (**78**) still loads; same-flag actions (e.g. frostbolt vs fireball) are indistinguishable without the id pack.  
 Legacy PBML1 still supported at inference via `ML_INPUT_DIM_V1 = 20` (core[0..11] + action flags only).
 
 Duel logfile for this layout: `ml_decisions_duel_v2.csv`.
@@ -120,6 +121,16 @@ Remaining DR effectiveness: level1→`1`, level2→`0.5`, level3→`0.25`, immun
 | 7 | `AF_FOCUS_PLAYER` | Focus enemy player |
 
 Flags are **not mutually exclusive**. Appended after the 70 state features in PBML input.
+
+---
+
+## Pack: Action id (`AF_ID_COUNT = 4`) — shipped (S1 execute)
+
+| Index | Name | Meaning |
+|------:|------|---------|
+| 0–3 | `AF_ID_*` | FNV-1a fingerprint of candidate action name (4 bytes → floats in [-1, 1]) |
+
+Recomputed from the action name at train and inference (not logged). Separates same-flag scripted actions (frostbolt vs fireball vs attack). Must match `HeuristicScores::FillActionIdFeatures` / `tools/ml/action_flags.py`.
 
 ---
 

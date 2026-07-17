@@ -284,3 +284,22 @@ Health remains **100%** for both participants (DEC-023). Major ability CDs stay 
 
 **Consequences:** Execute follow-on: multi-logit PBML schema + Engine path, stop highest-rank collapse for S2, queue Actions expose spell id for DAgger logs, trainer CE/aggregate loop, class template vocab builder, stacked eval harness. Blocked on S1 execute ([#18](https://github.com/gamesh411/mod-playerbots/issues/18)). Orchestration `duel-s2` remains [#13](https://github.com/gamesh411/mod-playerbots/issues/13).
 
+### DEC-027 — 2026-07-17 — S1 round-2 mixed-seat result + S2 readiness caveats
+**Status:** accepted  
+**Context:** [#18](https://github.com/gamesh411/mod-playerbots/issues/18) DAgger round-2 after action-id (82-D) + expert-elevation fixes. Product judgment: Arms vs Frost is dominated by precise mage ability sequencing (Frostbolt → Ice Lance, dual root via player Frost Nova + Water Elemental Nova / Cold Snap resets); kiting/movement ML is important but **deferred**. Concern that Water Elemental Frost Nova needs a **ground-target** (cast + click) which S1 queue ranking does not model and S2 spellbook execute may not yet support.
+
+**Decision:**
+
+| Piece | Rule |
+|-------|------|
+| Round-2 measured gate (δ=0.02, ~2.4k matches/seat) | **Frost-ranker PASS** — mage **31.0%** vs stock 25.8% (**+5.2pp**). **Arms-ranker FAIL** — warrior **70.9%** vs stock 74.6% (**−3.7pp**). DEC-025 freeze **not** met (both seats required). |
+| Remaining S1 work | Prefer **one more Arms-focused** DAgger / redeploy before abandoning S1 freeze. Mage seat is no longer the bottleneck. |
+| Pivot to S2 | If Arms cannot clear stock+δ without expanding beyond scripted **queue** vocab, open/execute S2 ([#11](https://github.com/gamesh411/mod-playerbots/issues/11) design / follow-on execute) rather than endless S1 expert-off on scalar flags. |
+| Movement | **Do not** start mage kite / ML movement for this matchup yet (scripted movement stays). |
+| S2 open risk — pet ground Nova | Before claiming Water Elemental Frost Nova combos in S2, verify Engine can issue **ground-targeted** pet/ability casts (not only unit-targeted `CastSpell`). Track as an S2 execute prerequisite / bug if missing. |
+| Artifacts | Keep 82-D PBML + logger/trainer fixes; stage card records round-2 numbers; freeze tag still TBD until both seats pass. |
+
+**Why:** Measured evidence: scripted-vocab + action-id is enough for Frost seat uplift once imitation bugs are fixed; Arms seat still underperforms Softmax-stock. Domain skill ceiling for Frost likely needs spell-id granularity (S2) and possibly pet ground targeting — not more S1 scalar category learning. Deferring kite keeps scope honest.
+
+**Consequences:** [#18](https://github.com/gamesh411/mod-playerbots/issues/18) stays open until Arms clears or an explicit S1-freeze waiver. S2 execute must list ground-target / Water Elemental Nova as a readiness check. Update stage card `s1-scripted-vocab-ranker.md` status to reflect asymmetric PASS/FAIL.
+

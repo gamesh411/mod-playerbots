@@ -25,6 +25,7 @@ Stage freeze contract (artifacts / conf / tags / cards): [#8](https://github.com
 | [DECISIONS.md](DECISIONS.md) | Append-only design log (**DEC-018** = curriculum) |
 | [FEATURES.md](FEATURES.md) | Feature packs (70-D state + action flags) |
 | [../../tools/ml/README.md](../../tools/ml/README.md) | Train / analyze commands |
+| [research/s1-training-lessons-learned.md](research/s1-training-lessons-learned.md) | S1 execute (#18): novel failure modes / debugging intuition |
 
 ## Archive
 
