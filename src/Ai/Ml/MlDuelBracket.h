@@ -88,7 +88,12 @@ private:
     bool ParsePark(std::string const& raw, MlDuelPark& out);
     bool EnsureAtPark(Player* bot);
     bool IsNearPark(Player* bot) const;
+    // Walk to a random point inside the park (no teleport). Idle bots use this while queued.
     void PatrolNearPark(Player* bot);
+    // Walk toward a same-map partner when in range of the park but too far to duel.
+    void MoveTowardPartner(Player* bot, Player* partner);
+    // Same-map nearby complement (not waitlist). Caller must be on bot's map thread.
+    ObjectGuid FindNearbyComplement(Player* bot, MlDuelSpecKey const& want) const;
     bool AreaAllowsDuels(Player* bot) const;
     bool IsBracketCandidate(Player* bot, PlayerbotAI* botAI) const;
     bool IsIdleEligible(Player* bot, PlayerbotAI* botAI) const;
@@ -100,6 +105,10 @@ private:
     uint32 maxMatchRange = 80;
     uint32 rematchCooldownMs = 500;
     bool resetCooldownsOnDuelEnd = false;
+    // Yard radius for idle wander around the park center (clamped by maxMatchRange).
+    float parkWanderRadius = 35.f;
+    // Max distance to cast duel request; farther pairs walk together first.
+    float duelRequestRange = 9.f;
     std::vector<MlDuelPair> pairs;
     MlDuelPark alliancePark;
     MlDuelPark hordePark;

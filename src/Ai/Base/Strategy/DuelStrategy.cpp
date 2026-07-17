@@ -20,7 +20,7 @@ DuelStrategy::DuelStrategy(PlayerbotAI* botAI) : PassThroughStrategy(botAI) {}
 
 void StartDuelStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
 {
-    triggers.push_back(new TriggerNode("ml duel bracket", { NextAction("ml duel bracket", 50.0f) }));
+    triggers.push_back(new TriggerNode("ml duel bracket", { NextAction("ml duel bracket", 90.0f) }));
 }
 
 StartDuelStrategy::StartDuelStrategy(PlayerbotAI* botAI) : Strategy(botAI) {}
