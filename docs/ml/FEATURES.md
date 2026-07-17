@@ -129,13 +129,15 @@ Flags are **not mutually exclusive**. Appended after the 70 state features in PB
 |--------|------|---------|
 | `episode_id` | Meta | Per-decision id |
 | `match_id` | Meta | BG/arena instance or synthetic duel id |
+| `action` | Label | Action taken by the live policy |
+| `expert_action` | Label | Softmax-stock τ=0 pick (duel_v4 / DEC-025 DAgger) |
 | `short_reward` | Label | ~2s shaped reward |
 | `terminal` | Label | +1/−1/0 match outcome |
 | `reward` | Label | `short + λ*terminal` |
 | `explored` | Meta | ε-greedy (arena) or duel-random policy bit |
 | `in_bg` / `in_arena` / `in_duel` | Filter | Train splits |
 
-Rotating files (`ml_decisions_duel_v1.csv` → `_v2.csv`, …) when columns / feature count change.
+Rotating files (`ml_decisions_duel_v1.csv` → `_v2.csv`, …) when columns / feature count change. Fresh S1 DAgger farms use `ml_decisions_duel_v4.csv` (adds `expert_action`).
 
 ---
 

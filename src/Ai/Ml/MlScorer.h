@@ -7,21 +7,26 @@
 #define PLAYERBOTS_MLSCORER_H
 
 #include <string>
+#include <unordered_map>
 
 #include "CombatDecisionFeatures.h"
+#include "Define.h"
 #include "MlMlpModel.h"
 
 class Action;
 class PlayerbotAI;
 
-// Curriculum duel ranker (S1/S2). Single model path — no hybrid/pvp blend (DEC-021).
+// Curriculum duel ranker (S1/S2). Per-class PBML with optional single-path fallback (DEC-021 / DEC-025).
 class MlScorer
 {
 public:
     static MlScorer& instance();
 
     void Reload();
-    bool ModelLoaded() const { return duelModel.IsLoaded(); }
+    // True if any duel model is loaded (legacy callers).
+    bool ModelLoaded() const;
+    // DEC-025: prefer per-class PBML; fall back to MlModelPathDuel.
+    bool HasModelFor(uint8 playerClass) const;
 
     // Raw network score for a candidate action (higher = preferred). Returns 0 if unloaded.
     float ScoreDuel(PlayerbotAI* botAI, Action* action, CombatFeatureVector const& features);
@@ -32,7 +37,10 @@ public:
 
 private:
     MlScorer() = default;
-    MlMlpModel duelModel;
+    MlMlpModel const* ModelFor(uint8 playerClass) const;
+
+    MlMlpModel fallbackModel;
+    std::unordered_map<uint8, MlMlpModel> classModels;
     bool attemptedLoad = false;
 };
 

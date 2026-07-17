@@ -27,6 +27,8 @@ struct MlPendingDecision
     uint32 resolveAtMs = 0;
     CombatFeatureVector features{};
     std::string actionName;
+    // Softmax-stock τ=0 pick among legal queue candidates (DEC-025 DAgger label).
+    std::string expertActionName;
     float heuristicScore = 0.0f;
     float finalScore = 0.0f;
     float shortReward = 0.0f;
@@ -41,7 +43,8 @@ class MlDecisionLogger
 public:
     static MlDecisionLogger& instance();
 
-    void OnActionExecuted(PlayerbotAI* botAI, std::string const& actionName, float heuristicScore, float finalScore);
+    void OnActionExecuted(PlayerbotAI* botAI, std::string const& actionName, float heuristicScore, float finalScore,
+                          std::string const& expertAction = "");
     void Update(PlayerbotAI* botAI);
     void FlushEpisode(Player* bot, float terminal);
 
@@ -63,6 +66,8 @@ private:
     std::unordered_map<uint32, uint32> duelMatchByGuid;
     uint64 nextEpisodeId = 1;
     bool headerWritten = false;
+    // true ⇒ rows include expert_action (duel_v4 / DEC-025). false ⇒ legacy v3 layout.
+    bool logExpertAction = true;
 };
 
 #define sMlDecisionLogger MlDecisionLogger::instance()

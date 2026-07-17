@@ -3,14 +3,15 @@
 Train a tiny PBML1 MLP ranker from ml_decisions*.csv logs.
 
 Usage:
-  python3 train_ranker.py --csv ml_decisions_duel_v2.csv --out duel_warrior.pbml --duel-only
-  python3 train_ranker.py --csv ml_decisions.csv --out hybrid_ranker.pbml
-  python3 train_ranker.py --csv ml_decisions.csv --out pvp_ranker.pbml --pvp-only
+  python train_ranker.py --csv ml_decisions_duel_v3.csv --out duel_warrior.pbml --duel-only --self-class warrior
+  python train_ranker.py --csv ml_decisions_duel_v4.csv --out duel_mage.pbml --duel-only --self-class mage
+  python train_ranker.py --csv ml_decisions.csv --out hybrid_ranker.pbml
 
 Requires: numpy (pip install numpy)
 
 Schemas:
-  duel_v2 / DEC-017: 70 combat features + 8 action flags (78 floats)
+  duel_v4 / DEC-025: meta + expert_action + 70 combat features + 8 action flags
+  duel_v3 / DEC-017: meta (no expert_action) + 70 + 8  (header optional)
   legacy v2:         12 combat features + 8 action flags (20 floats)
   legacy v1:         12 + 6 flags (18) with --allow-legacy-18
 """
@@ -29,6 +30,50 @@ ACTION_COLS_V2 = [f"a{i}" for i in range(8)]
 ACTION_COLS_V1 = [f"a{i}" for i in range(6)]
 HIDDEN = 64
 
+# Class pack one-hot indices inside f0..f69 (FEATURES.md Class pack 12–21).
+SELF_CLASS_F = {
+    "warrior": 12,
+    "paladin": 13,
+    "hunter": 14,
+    "rogue": 15,
+    "priest": 16,
+    "deathknight": 17,
+    "dk": 17,
+    "shaman": 18,
+    "mage": 19,
+    "warlock": 20,
+    "druid": 21,
+}
+
+# Logger meta columns (duel_v3 headerless / written).
+DUEL_V3_META = [
+    "episode_id",
+    "match_id",
+    "bot_guid",
+    "time_ms",
+    "action",
+    "reward",
+    "short_reward",
+    "terminal",
+    "heuristic",
+    "final_score",
+    "in_duel",
+]
+DUEL_V4_META = [
+    "episode_id",
+    "match_id",
+    "bot_guid",
+    "time_ms",
+    "action",
+    "expert_action",
+    "reward",
+    "short_reward",
+    "terminal",
+    "heuristic",
+    "final_score",
+    "in_duel",
+]
+
 # Mirror CombatDecisionUtil::IsMetaAction (trainer-side safety net for old CSVs).
 META_SUBSTR = (
     "set facing", "reach melee", "reach spell", "check mount", "check objective", "reset objective",
@@ -44,7 +89,7 @@ META_SUBSTR = (
 DUEL_NOISE_SUBSTR = (
     "gryphon", "wind rider", "warhorse", "stallion", "steed", "talon", "drake", "wyvern",
     "mount", "lfg leave", "flee", "battle stance", "berserker stance", "defensive stance",
-    "melee", "auto attack",
+    "melee", "auto attack", "duel_start",
 )
 
 
@@ -56,6 +101,16 @@ def is_meta_action(name: str) -> bool:
 def is_duel_noise_action(name: str) -> bool:
     n = name.lower()
     return any(s in n for s in DUEL_NOISE_SUBSTR)
+
+
+def duel_fieldnames_for_width(n_cols: int) -> list[str] | None:
+    """Infer duel CSV fieldnames from column count when the file has no header."""
+    n_feat_flags = 70 + 8
+    if n_cols == len(DUEL_V3_META) + n_feat_flags:
+        return DUEL_V3_META + [f"f{i}" for i in range(70)] + ACTION_COLS_V2
+    if n_cols == len(DUEL_V4_META) + n_feat_flags:
+        return DUEL_V4_META + [f"f{i}" for i in range(70)] + ACTION_COLS_V2
+    return None
 
 
 def detect_feature_cols(fieldnames: list[str]) -> list[str]:
@@ -74,6 +129,26 @@ def detect_feature_cols(fieldnames: list[str]) -> list[str]:
     return cols
 
 
+def resolve_fieldnames(path: Path) -> tuple[list[str], bool]:
+    """Return (fieldnames, headerless). Injects duel_v3/v4 header when missing."""
+    with path.open(newline="") as f:
+        sample = f.readline()
+    if not sample:
+        raise SystemExit(f"Empty CSV: {path}")
+    first = next(csv.reader([sample]))
+    looks_header = bool(first) and (first[0] == "episode_id" or str(first[0]).startswith("episode"))
+    if looks_header:
+        return list(first), False
+    inferred = duel_fieldnames_for_width(len(first))
+    if not inferred:
+        raise SystemExit(
+            f"Headerless CSV with {len(first)} cols not recognized as duel_v3/v4. "
+            "Prepend a header or pass a headed file."
+        )
+    print(f"schema: injected headerless duel layout cols={len(first)}")
+    return inferred, True
+
+
 def load_dataset(
     path: Path,
     pvp_only: bool,
@@ -84,29 +159,40 @@ def load_dataset(
     allow_legacy_18: bool,
     terminal_only: bool,
     drop_duel_noise: bool,
+    self_class: str | None,
+    max_rows: int,
+    imitate_expert: bool,
 ):
     xs, ys = [], []
-    skipped_meta = skipped_zone = skipped_bad = skipped_term = skipped_noise = 0
+    skipped_meta = skipped_zone = skipped_bad = skipped_term = skipped_noise = skipped_class = 0
+    class_f = SELF_CLASS_F.get(self_class.lower()) if self_class else None
+
+    fieldnames, headerless = resolve_fieldnames(path)
+    feature_cols = detect_feature_cols(fieldnames)
+    has_v2 = all(c in fieldnames for c in ACTION_COLS_V2)
+    has_v1 = all(c in fieldnames for c in ACTION_COLS_V1)
+    if has_v2:
+        action_cols = ACTION_COLS_V2
+    elif has_v1 and allow_legacy_18:
+        action_cols = ACTION_COLS_V1
+    else:
+        raise SystemExit(
+            f"CSV missing a0..a7. Found fields={fieldnames[:20]}... "
+            "Collect new logs, or pass --allow-legacy-18 for old 18-D files."
+        )
+
+    has_expert = "expert_action" in fieldnames
+    expected = len(feature_cols) + 8
+    print(
+        f"schema: features={len(feature_cols)} flags={len(action_cols)} "
+        f"input_dim~={expected} expert_action={has_expert} headerless={headerless}"
+    )
+
     with path.open(newline="") as f:
-        reader = csv.DictReader(f)
-        fieldnames = reader.fieldnames or []
-        feature_cols = detect_feature_cols(fieldnames)
-        has_v2 = all(c in fieldnames for c in ACTION_COLS_V2)
-        has_v1 = all(c in fieldnames for c in ACTION_COLS_V1)
-        if has_v2:
-            action_cols = ACTION_COLS_V2
-        elif has_v1 and allow_legacy_18:
-            action_cols = ACTION_COLS_V1
-        else:
-            raise SystemExit(
-                f"CSV missing a0..a7. Found fields={fieldnames[:20]}... "
-                "Collect new logs, or pass --allow-legacy-18 for old 18-D files."
-            )
-
-        expected = len(feature_cols) + 8
-        print(f"schema: features={len(feature_cols)} flags={len(action_cols)} input_dim~={expected}")
-
+        reader = csv.DictReader(f, fieldnames=fieldnames if headerless else None)
         for row in reader:
+            if max_rows and len(ys) >= max_rows:
+                break
             if row.get("episode_id") == "episode_id":
                 continue
             in_bg = row.get("in_bg", "0") == "1"
@@ -140,15 +226,23 @@ def load_dataset(
                 skipped_noise += 1
                 continue
             try:
-                x = [float(row[c]) for c in feature_cols] + [float(row[c]) for c in action_cols]
+                feats = [float(row[c]) for c in feature_cols]
+                if class_f is not None and feats[class_f] < 0.5:
+                    skipped_class += 1
+                    continue
+                flags = [float(row[c]) for c in action_cols]
+                if imitate_expert and not has_expert:
+                    raise SystemExit("--imitate-expert requires expert_action column (duel_v4)")
+                y = float(row["reward"])
+                x = feats + flags
                 if len(action_cols) == 6:
                     x.extend([0.0, 0.0])
-                y = float(row["reward"])
             except (KeyError, ValueError):
                 skipped_bad += 1
                 continue
             xs.append(x)
             ys.append(y)
+
     if not xs:
         raise SystemExit(f"No usable rows in {path}")
     X = np.asarray(xs, dtype=np.float32)
@@ -157,8 +251,8 @@ def load_dataset(
     y = np.clip(y, -30.0, 30.0)
     print(
         f"filter: kept={len(y)} skipped_meta={skipped_meta} skipped_zone={skipped_zone} "
-        f"skipped_term={skipped_term} skipped_noise={skipped_noise} skipped_bad={skipped_bad} "
-        f"input_dim={X.shape[1]}"
+        f"skipped_term={skipped_term} skipped_noise={skipped_noise} skipped_class={skipped_class} "
+        f"skipped_bad={skipped_bad} input_dim={X.shape[1]}"
     )
     return X, y
 
@@ -207,6 +301,7 @@ def train(X, y, epochs=40, lr=1e-2, batch=64, seed=0):
 
 def write_pbml(path: Path, w1, b1, w2, b2):
     input_dim = w1.shape[1]
+    path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w") as f:
         f.write("PBML1\n")
         f.write(f"input_dim {input_dim}\n")
@@ -232,15 +327,23 @@ def main():
     ap.add_argument("--pve-only", action="store_true", help="train only on non-BG/non-arena/non-duel rows")
     ap.add_argument("--terminal-only", action="store_true", help="keep rows with terminal ∈ {+1,-1}")
     ap.add_argument("--drop-duel-noise", action="store_true",
-                    help="drop stance/melee/auto-attack/mount spam for cleaner duel training")
+                    help="drop stance/melee/auto-attack/mount/duel_start spam for cleaner duel training")
     ap.add_argument("--keep-meta", action="store_true", help="do not drop meta/navigation actions")
     ap.add_argument("--allow-legacy-18", action="store_true", help="accept old a0..a5 CSVs (pads to 20)")
+    ap.add_argument("--self-class", type=str, default="",
+                    help="keep rows where self class one-hot is set (warrior|mage|...)")
+    ap.add_argument("--max-rows", type=int, default=0, help="cap kept rows after filters (0 = all)")
+    ap.add_argument("--imitate-expert", action="store_true",
+                    help="require expert_action column (duel_v4); still reward-trains until CE lands")
     ap.add_argument("--epochs", type=int, default=40)
     ap.add_argument("--lr", type=float, default=1e-2)
     ap.add_argument("--hidden", type=int, default=64, help="hidden layer width")
+    ap.add_argument("--seed", type=int, default=0)
     args = ap.parse_args()
     if sum([args.pvp_only, args.pve_only, args.arena_only, args.duel_only]) > 1:
         raise SystemExit("Use only one of --pvp-only / --pve-only / --arena-only / --duel-only")
+    if args.self_class and args.self_class.lower() not in SELF_CLASS_F:
+        raise SystemExit(f"--self-class must be one of {sorted(SELF_CLASS_F)}")
 
     global HIDDEN
     HIDDEN = args.hidden
@@ -255,8 +358,11 @@ def main():
         allow_legacy_18=args.allow_legacy_18,
         terminal_only=args.terminal_only,
         drop_duel_noise=args.drop_duel_noise,
+        self_class=args.self_class or None,
+        max_rows=args.max_rows,
+        imitate_expert=args.imitate_expert,
     )
-    w1, b1, w2, b2 = train(X, y, epochs=args.epochs, lr=args.lr)
+    w1, b1, w2, b2 = train(X, y, epochs=args.epochs, lr=args.lr, seed=args.seed)
     write_pbml(args.out, w1, b1, w2, b2)
 
 

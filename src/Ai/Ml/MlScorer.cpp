@@ -10,7 +10,10 @@
 
 #include "Action.h"
 #include "HeuristicScores.h"
+#include "Player.h"
+#include "PlayerbotAI.h"
 #include "PlayerbotAIConfig.h"
+#include "SharedDefines.h"
 
 MlScorer& MlScorer::instance()
 {
@@ -21,8 +24,42 @@ MlScorer& MlScorer::instance()
 void MlScorer::Reload()
 {
     attemptedLoad = true;
+    classModels.clear();
+    fallbackModel = MlMlpModel{};
+
+    auto loadClass = [&](uint8 playerClass, std::string const& path) {
+        if (path.empty())
+            return;
+        MlMlpModel model;
+        if (model.Load(path))
+            classModels[playerClass] = std::move(model);
+    };
+
+    loadClass(CLASS_WARRIOR, sPlayerbotAIConfig.mlModelPathDuelWarrior);
+    loadClass(CLASS_MAGE, sPlayerbotAIConfig.mlModelPathDuelMage);
+
     if (!sPlayerbotAIConfig.mlModelPathDuel.empty())
-        duelModel.Load(sPlayerbotAIConfig.mlModelPathDuel);
+        fallbackModel.Load(sPlayerbotAIConfig.mlModelPathDuel);
+}
+
+bool MlScorer::ModelLoaded() const
+{
+    return fallbackModel.IsLoaded() || !classModels.empty();
+}
+
+bool MlScorer::HasModelFor(uint8 playerClass) const
+{
+    return ModelFor(playerClass) != nullptr;
+}
+
+MlMlpModel const* MlScorer::ModelFor(uint8 playerClass) const
+{
+    auto it = classModels.find(playerClass);
+    if (it != classModels.end() && it->second.IsLoaded())
+        return &it->second;
+    if (fallbackModel.IsLoaded())
+        return &fallbackModel;
+    return nullptr;
 }
 
 void MlScorer::BuildInput(CombatFeatureVector const& features, std::string const& actionName, float* out) const
@@ -60,19 +97,23 @@ void MlScorer::BuildInputForDim(CombatFeatureVector const& features, std::string
     }
 }
 
-float MlScorer::ScoreDuel(PlayerbotAI* /*botAI*/, Action* action, CombatFeatureVector const& features)
+float MlScorer::ScoreDuel(PlayerbotAI* botAI, Action* action, CombatFeatureVector const& features)
 {
     if (!attemptedLoad)
         Reload();
 
-    if (!duelModel.IsLoaded() || !action)
+    if (!action || !botAI || !botAI->GetBot())
         return 0.0f;
 
-    size_t dim = duelModel.InputDim();
+    MlMlpModel const* model = ModelFor(botAI->GetBot()->getClass());
+    if (!model)
+        return 0.0f;
+
+    size_t dim = model->InputDim();
     if (dim != ML_INPUT_DIM && dim != ML_INPUT_DIM_V1)
         return 0.0f;
 
     std::vector<float> input(dim);
     BuildInputForDim(features, action->getName(), input.data(), dim);
-    return duelModel.Forward(input.data(), dim);
+    return model->Forward(input.data(), dim);
 }
