@@ -25,6 +25,65 @@
 #include "Strategy.h"
 #include "Timer.h"
 
+namespace
+{
+struct SoftmaxCandidate
+{
+    ActionBasket* basket = nullptr;
+    float logit = 0.0f;
+};
+
+ActionBasket* SelectSoftmaxBasket(std::vector<SoftmaxCandidate> const& support, float tau)
+{
+    if (support.empty())
+        return nullptr;
+
+    ActionBasket* selected = support.front().basket;
+    if (tau <= 0.0f)
+    {
+        float bestLogit = -std::numeric_limits<float>::infinity();
+        for (SoftmaxCandidate const& candidate : support)
+        {
+            if (candidate.logit > bestLogit)
+            {
+                bestLogit = candidate.logit;
+                selected = candidate.basket;
+            }
+        }
+        return selected;
+    }
+
+    float maxLogit = support.front().logit;
+    for (SoftmaxCandidate const& candidate : support)
+        if (candidate.logit > maxLogit)
+            maxLogit = candidate.logit;
+
+    float sumWeight = 0.0f;
+    std::vector<float> weights;
+    weights.reserve(support.size());
+    for (SoftmaxCandidate const& candidate : support)
+    {
+        float const weight = std::exp((candidate.logit - maxLogit) / tau);
+        weights.push_back(weight);
+        sumWeight += weight;
+    }
+
+    float const roll = frand(0.0f, sumWeight);
+    float cumulative = 0.0f;
+    selected = support.back().basket;
+    for (std::size_t i = 0; i < support.size(); ++i)
+    {
+        cumulative += weights[i];
+        if (roll <= cumulative)
+        {
+            selected = support[i].basket;
+            break;
+        }
+    }
+    return selected;
+}
+} // namespace
+
 Engine::Engine(PlayerbotAI* botAI, AiObjectContext* factory) : PlayerbotAIAware(botAI), aiObjectContext(factory)
 {
     lastRelevance = 0.0f;
@@ -216,17 +275,19 @@ bool Engine::DoNextAction(Unit* /*unit*/, uint32 /*depth*/, bool minimal)
         }
 
         bool const duelPolicy = inDuel && sPlayerbotAIConfig.mlDuelBracketEnabled;
-        // DEC-022: Softmax-stock over masked scripted-queue combat baskets.
+        bool const rankerReady =
+            duelPolicy && policy == "ranker" && self && sMlScorer.HasModelFor(self->getClass());
+        std::string duelExpertAction;
+        // DEC-022 / DEC-025: Softmax(τ) over stock relevance or ScoreDuel.
         // Empty support falls through to stock Peek (scripted movement / meta).
-        if (duelPolicy && policy == "softmax-stock")
+        if (duelPolicy && (policy == "softmax-stock" || rankerReady))
         {
-            struct SoftmaxCandidate
-            {
-                ActionBasket* basket = nullptr;
-                float logit = 0.0f;
-            };
-
             std::vector<SoftmaxCandidate> support;
+            AiObjectContext* context = aiObjectContext;
+            CombatFeatureVector const features =
+                rankerReady ? AI_VALUE(CombatFeatureVector, "combat decision features") : CombatFeatureVector{};
+            float bestStock = -std::numeric_limits<float>::infinity();
+
             for (ActionBasket* candidate : queue.Baskets())
             {
                 if (!candidate || !candidate->getAction())
@@ -237,78 +298,48 @@ bool Engine::DoNextAction(Unit* /*unit*/, uint32 /*depth*/, bool minimal)
                     !CombatDecisionUtil::IsLoggableCombatAction(candidateAction->getName()))
                     continue;
 
-                float const logit = candidate->getRelevance();
-                float postMultiplier = logit;
-                for (Multiplier* multiplier : multipliers)
+                float const stockLogit = candidate->getRelevance();
+                if (policy == "softmax-stock")
                 {
-                    postMultiplier *= multiplier->GetValue(candidateAction);
+                    float postMultiplier = stockLogit;
+                    for (Multiplier* multiplier : multipliers)
+                    {
+                        postMultiplier *= multiplier->GetValue(candidateAction);
+                        if (postMultiplier <= 0.0f)
+                            break;
+                    }
                     if (postMultiplier <= 0.0f)
-                        break;
+                        continue;
                 }
-                if (postMultiplier <= 0.0f)
-                    continue;
 
+                if (stockLogit > bestStock)
+                {
+                    bestStock = stockLogit;
+                    duelExpertAction = candidateAction->getName();
+                }
+
+                float const logit =
+                    rankerReady ? sMlScorer.ScoreDuel(botAI, candidateAction, features) : stockLogit;
                 support.push_back({candidate, logit});
             }
 
             if (!support.empty())
             {
-                ActionBasket* selected = support.front().basket;
-                float const tau = sPlayerbotAIConfig.mlDuelBracketSoftmaxTemperature;
-                if (tau <= 0.0f)
+                ActionBasket* selected =
+                    SelectSoftmaxBasket(support, sPlayerbotAIConfig.mlDuelBracketSoftmaxTemperature);
+                if (selected)
                 {
-                    float bestLogit = -std::numeric_limits<float>::infinity();
-                    for (SoftmaxCandidate const& candidate : support)
-                    {
-                        if (candidate.logit > bestLogit)
-                        {
-                            bestLogit = candidate.logit;
-                            selected = candidate.basket;
-                        }
-                    }
+                    basket = selected;
+                    relevance = basket->getRelevance();
+                    skipPrerequisites = basket->isSkipPrerequisites();
+                    actionNode = basket->getAction();
+                    action = InitializeAction(actionNode);
+                    LogAction("A:%s - %s", action ? action->getName().c_str() : "?",
+                              rankerReady ? "DUEL-SOFTMAX-RANKER" : "DUEL-SOFTMAX-STOCK");
                 }
-                else
-                {
-                    float maxLogit = support.front().logit;
-                    for (SoftmaxCandidate const& candidate : support)
-                    {
-                        if (candidate.logit > maxLogit)
-                            maxLogit = candidate.logit;
-                    }
-
-                    float sumWeight = 0.0f;
-                    std::vector<float> weights;
-                    weights.reserve(support.size());
-                    for (SoftmaxCandidate const& candidate : support)
-                    {
-                        float const weight = std::exp((candidate.logit - maxLogit) / tau);
-                        weights.push_back(weight);
-                        sumWeight += weight;
-                    }
-
-                    float const roll = frand(0.0f, sumWeight);
-                    float cumulative = 0.0f;
-                    selected = support.back().basket;
-                    for (std::size_t i = 0; i < support.size(); ++i)
-                    {
-                        cumulative += weights[i];
-                        if (roll <= cumulative)
-                        {
-                            selected = support[i].basket;
-                            break;
-                        }
-                    }
-                }
-
-                basket = selected;
-                relevance = basket->getRelevance();
-                skipPrerequisites = basket->isSkipPrerequisites();
-                actionNode = basket->getAction();
-                action = InitializeAction(actionNode);
-                LogAction("A:%s - DUEL-SOFTMAX-STOCK", action ? action->getName().c_str() : "?");
             }
         }
-        else if (duelPolicy && (policy == "random" || (policy == "ranker" && sMlScorer.ModelLoaded())))
+        else if (duelPolicy && policy == "random")
         {
             std::vector<ActionBasket*> candidates;
             for (ActionBasket* candidate : queue.Baskets())
@@ -326,23 +357,6 @@ bool Engine::DoNextAction(Unit* /*unit*/, uint32 /*depth*/, bool minimal)
             if (!candidates.empty())
             {
                 ActionBasket* selected = candidates[urand(0, candidates.size() - 1)];
-                if (policy == "ranker")
-                {
-                    AiObjectContext* context = aiObjectContext;
-                    CombatFeatureVector const features = AI_VALUE(CombatFeatureVector, "combat decision features");
-                    float bestScore = -std::numeric_limits<float>::infinity();
-                    for (ActionBasket* candidate : candidates)
-                    {
-                        Action* candidateAction = InitializeAction(candidate->getAction());
-                        float const score = sMlScorer.ScoreDuel(botAI, candidateAction, features);
-                        if (score > bestScore)
-                        {
-                            bestScore = score;
-                            selected = candidate;
-                        }
-                    }
-                }
-
                 basket = selected;
                 relevance = basket->getRelevance();
                 skipPrerequisites = basket->isSkipPrerequisites();
@@ -368,9 +382,8 @@ bool Engine::DoNextAction(Unit* /*unit*/, uint32 /*depth*/, bool minimal)
 
             if (action->isPossible() && relevance > 0)
             {
-                // Softmax-stock already selected above; random/ranker re-select here after Peek gates.
-                if (duelPolicy && policy != "softmax-stock" &&
-                    (policy == "random" || (policy == "ranker" && sMlScorer.ModelLoaded())))
+                // Softmax policies already selected above; random re-selects after Peek gates.
+                if (duelPolicy && policy == "random")
                 {
                     std::vector<ActionBasket*> candidates;
                     for (ActionBasket* candidate : queue.Baskets())
@@ -388,24 +401,6 @@ bool Engine::DoNextAction(Unit* /*unit*/, uint32 /*depth*/, bool minimal)
                     if (!candidates.empty())
                     {
                         ActionBasket* selected = candidates[urand(0, candidates.size() - 1)];
-                        if (policy == "ranker")
-                        {
-                            AiObjectContext* context = aiObjectContext;
-                            CombatFeatureVector const features =
-                                AI_VALUE(CombatFeatureVector, "combat decision features");
-                            float bestScore = -std::numeric_limits<float>::infinity();
-                            for (ActionBasket* candidate : candidates)
-                            {
-                                Action* candidateAction = InitializeAction(candidate->getAction());
-                                float const score = sMlScorer.ScoreDuel(botAI, candidateAction, features);
-                                if (score > bestScore)
-                                {
-                                    bestScore = score;
-                                    selected = candidate;
-                                }
-                            }
-                        }
-
                         basket = selected;
                         relevance = basket->getRelevance();
                         skipPrerequisites = basket->isSkipPrerequisites();
@@ -440,7 +435,7 @@ bool Engine::DoNextAction(Unit* /*unit*/, uint32 /*depth*/, bool minimal)
                 {
                     LogAction("A:%s - OK", action->getName().c_str());
                     if (sPlayerbotAIConfig.mlLoggingEnabled)
-                        sMlDecisionLogger.OnActionExecuted(botAI, action->getName(), 0.0f, relevance);
+                        sMlDecisionLogger.OnActionExecuted(botAI, action->getName(), 0.0f, relevance, duelExpertAction);
                     MultiplyAndPush(actionNode->getContinuers(), relevance, false, event, "cont");
                     lastRelevance = relevance;
                     delete actionNode;  // Safe memory management

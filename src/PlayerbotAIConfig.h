@@ -342,6 +342,9 @@ public:
     uint32 mlRewardDelayMs;
     float mlDuelTerminalLambda;
     std::string mlModelPathDuel;
+    // DEC-025 per-class deploy paths (empty ⇒ fall back to mlModelPathDuel).
+    std::string mlModelPathDuelWarrior;
+    std::string mlModelPathDuelMage;
 
     bool mlDuelBracketEnabled;
     std::string mlDuelBracketPairs;

@@ -22,7 +22,7 @@ MlDecisionLogger& MlDecisionLogger::instance()
 }
 
 void MlDecisionLogger::OnActionExecuted(PlayerbotAI* botAI, std::string const& actionName, float heuristicScore,
-                                        float finalScore)
+                                        float finalScore, std::string const& expertAction)
 {
     if (!sPlayerbotAIConfig.mlLoggingEnabled || !botAI)
         return;
@@ -44,6 +44,7 @@ void MlDecisionLogger::OnActionExecuted(PlayerbotAI* botAI, std::string const& a
     d.resolveAtMs = d.logTimeMs + sPlayerbotAIConfig.mlRewardDelayMs;
     d.features = AI_VALUE(CombatFeatureVector, "combat decision features");
     d.actionName = actionName;
+    d.expertActionName = expertAction.empty() ? actionName : expertAction;
     d.heuristicScore = heuristicScore;
     d.finalScore = finalScore;
     d.targetHpAtLog = static_cast<uint8>(d.features[CF_TARGET_HEALTH] * 100.0f);
@@ -106,24 +107,44 @@ void MlDecisionLogger::WriteRow(MlPendingDecision const& d, float reward, float 
     if (!out)
         return;
 
+    std::string expert = d.expertActionName.empty() ? d.actionName : d.expertActionName;
+    for (char& c : expert)
+        if (c == ',')
+            c = ';';
+
     if (!headerWritten)
     {
         std::ifstream probe(path.c_str(), std::ios::binary | std::ios::ate);
         bool const fileHasContent = probe.good() && probe.tellg() > 0;
         if (!fileHasContent)
         {
-            out << "episode_id,match_id,bot_guid,time_ms,action,reward,short_reward,terminal,heuristic,final_score,in_duel";
+            // duel_v4: expert_action for DAgger (DEC-025).
+            logExpertAction = true;
+            out << "episode_id,match_id,bot_guid,time_ms,action,expert_action,reward,short_reward,terminal,heuristic,"
+                   "final_score,in_duel";
             for (size_t i = 0; i < CF_FEATURE_COUNT; ++i)
                 out << ",f" << i;
             for (size_t i = 0; i < AF_COUNT; ++i)
                 out << ",a" << i;
             out << "\n";
         }
+        else
+        {
+            // Append-compatible with existing v3 (headerless or without expert_action).
+            probe.clear();
+            probe.seekg(0);
+            std::string firstLine;
+            std::getline(probe, firstLine);
+            logExpertAction = firstLine.find("expert_action") != std::string::npos;
+        }
         headerWritten = true;
     }
 
-    out << d.episodeId << "," << d.matchId << "," << d.botGuid.GetCounter() << "," << d.logTimeMs << "," << action << ","
-        << reward << "," << d.shortReward << "," << terminal << "," << d.heuristicScore << "," << d.finalScore << ",1";
+    out << d.episodeId << "," << d.matchId << "," << d.botGuid.GetCounter() << "," << d.logTimeMs << "," << action;
+    if (logExpertAction)
+        out << "," << expert;
+    out << "," << reward << "," << d.shortReward << "," << terminal << "," << d.heuristicScore << "," << d.finalScore
+        << ",1";
     for (size_t i = 0; i < CF_FEATURE_COUNT; ++i)
         out << "," << d.features[i];
     for (size_t i = 0; i < AF_COUNT; ++i)

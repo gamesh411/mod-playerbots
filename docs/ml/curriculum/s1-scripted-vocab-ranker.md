@@ -11,11 +11,11 @@
 | **Models** | Per-class PBML (warrior / mage; … as pool grows) |
 | **Train** | Reward bootstrap on S0 CSV → DAgger×2 (imitate Softmax-stock τ=0) → expert-off (reward) → aggregate retrain |
 | **Freeze gate** | Both seats beat stock↔stock baseline winrate by δ (not raw 50%) |
-| **Policy artifact** | _TBD per-class `.pbml` in `artifacts/duel/s1/`_ |
-| **Conf profile** | _TBD `duel-s1`_ (`ActionPolicy=ranker`, `SpellPool=queue`, demo τ≤0) |
-| **Data tag** | _TBD_ |
-| **Git tag** | _TBD `stage/s1-…`_ |
-| **Status** | design locked — not frozen |
+| **Policy artifact** | Bootstrap: `artifacts/duel/s1/warrior.pbml`, `mage.pbml` (reward on S0 CSV; pre-DAgger) |
+| **Conf profile** | Deploy keys `MlModelPathDuel.Warrior` / `.Mage`; orchestration `duel-s1` still [#13](https://github.com/gamesh411/mod-playerbots/issues/13) |
+| **Data tag** | Bootstrap slice: `ml_decisions_duel_v3.csv` (headerless OK); DAgger needs `duel_v4` + `expert_action` |
+| **Git tag** | _TBD `stage/s1-…`_ (after freeze gate) |
+| **Status** | execute in progress ([#18](https://github.com/gamesh411/mod-playerbots/issues/18)) — not frozen |
 
 ## Goal
 

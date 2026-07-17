@@ -2195,19 +2195,23 @@ AiPlayerbot.MlLoggingEnabled = 0
 # Delay before computing the short-horizon reward (ms).
 AiPlayerbot.MlRewardDelayMs = 2000
 
-# PBML1 duel ranker path. Empty keeps stock relevance ordering.
+# PBML1 duel ranker path (fallback when per-class paths are empty).
 AiPlayerbot.MlModelPathDuel = ""
+# DEC-025 per-class deploy paths. Prefer these over MlModelPathDuel.
+AiPlayerbot.MlModelPathDuel.Warrior = ""
+AiPlayerbot.MlModelPathDuel.Mage = ""
 
 # Enable the idle random-bot duel bracket.
 AiPlayerbot.MlDuelBracket.Enabled = 0
 # Class:specTab pairs, comma-separated. Default: Arms Warrior versus Frost Mage.
 AiPlayerbot.MlDuelBracket.Pairs = "1:0-8:2"
-AiPlayerbot.MlDuelBracket.LogFile = "ml_decisions_duel_v2.csv"
-# random | softmax-stock | heuristic | ranker (DEC-018 / DEC-022).
+# Fresh farms: v4 adds expert_action for DAgger. Rotate when schema changes.
+AiPlayerbot.MlDuelBracket.LogFile = "ml_decisions_duel_v4.csv"
+# random | softmax-stock | heuristic | ranker (DEC-018 / DEC-022 / DEC-025).
 AiPlayerbot.MlDuelBracket.ActionPolicy = "softmax-stock"
 # queue | spellbook | union. Spellbook/union apply only to ActionPolicy=random.
 AiPlayerbot.MlDuelBracket.SpellPool = "queue"
-# Softmax temperature for ActionPolicy=softmax-stock. Farm default 10; ≤0 ⇒ argmax (demo/freeze).
+# Softmax temperature for softmax-stock and ranker. Farm default 10; ≤0 ⇒ argmax (demo/freeze).
 AiPlayerbot.MlDuelBracket.SoftmaxTemperature = 10.0
 # Alliance: Elwynn map 34.00, 51.00 (outside SW gates). Horde: Durotar map 45.83, 13.90.
 AiPlayerbot.MlDuelBracket.ParkAlliance = "0,-9120,355,93.2,0.7"
