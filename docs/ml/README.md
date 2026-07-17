@@ -10,7 +10,7 @@
 |-------|--------|-------------------|------------|--------|
 | **S0** | Softmax(τ) over **stock** scripted combat relevance | Engine strategy **queue** | [s0-softmax-stock.md](curriculum/s0-softmax-stock.md) | **DEC-022** / [#9](https://github.com/gamesh411/mod-playerbots/issues/9); Engine [#15](https://github.com/gamesh411/mod-playerbots/issues/15) |
 | **S1** | Learned **scalar ranker** (Softmax/argmax over `ScoreDuel`) | Same scripted **queue** | [s1-scripted-vocab-ranker.md](curriculum/s1-scripted-vocab-ranker.md) | **DEC-025** / [#10](https://github.com/gamesh411/mod-playerbots/issues/10); execute follow-on |
-| **S2** | Learned **ranking head** | Full legal **spellbook** | [s2-spellbook-ranker.md](curriculum/s2-spellbook-ranker.md) | blocked on S1 — [#11](https://github.com/gamesh411/mod-playerbots/issues/11) |
+| **S2** | Learned **multi-logit** ranker (spell-id vocab, all ranks) | Full legal **spellbook** | [s2-spellbook-ranker.md](curriculum/s2-spellbook-ranker.md) | **DEC-026** / [#11](https://github.com/gamesh411/mod-playerbots/issues/11); execute follow-on |
 
 Roadmap detail: [curriculum/README.md](curriculum/README.md).  
 Stage freeze contract (artifacts / conf / tags / cards): [#8](https://github.com/gamesh411/mod-playerbots/issues/8).

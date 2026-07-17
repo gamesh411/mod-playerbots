@@ -259,5 +259,28 @@ Health remains **100%** for both participants (DEC-023). Major ability CDs stay 
 
 **Why:** Reward bootstrap alone is off-policy under stock; pure imitation never beats stock; DAgger with τ=0 stock on learner states keeps the scripted basin, then expert-off supplies winrate pressure to leave the teacher. Shared Softmax τ matches S0 ops. Per-class models scale to a wider duel pool without matchup explosion. Scalar S1 keeps the shippable scorer; spellbook-level granularity belongs at S2.
 
-**Consequences:** Execute follow-on implements ranker Softmax(τ), expert-action logging for DAgger, trainer imitate + aggregate loop, per-class deploy paths, and eval harness vs stock↔stock baseline. Orchestration stage replay remains [#13](https://github.com/gamesh411/mod-playerbots/issues/13). S2 design [#11](https://github.com/gamesh411/mod-playerbots/issues/11) inherits per-class packaging and winrate-uplift freeze pattern; adds spellbook vocab + ranking head.
+**Consequences:** Execute follow-on implements ranker Softmax(τ), expert-action logging for DAgger, trainer imitate + aggregate loop, per-class deploy paths, and eval harness vs stock↔stock baseline. Orchestration stage replay remains [#13](https://github.com/gamesh411/mod-playerbots/issues/13). S2 design locked in **DEC-026** / [#11](https://github.com/gamesh411/mod-playerbots/issues/11).
+
+### DEC-026 — 2026-07-17 — S2 spellbook multi-logit ranker: train / deploy / freeze
+**Status:** accepted  
+**Context:** [S2: ranking head over full legal spellbook (atomic actions)](https://github.com/gamesh411/mod-playerbots/issues/11). S1 (DEC-025) freezes a scalar queue ranker; DEC-011’s true multi-logit head and DEC-018’s spellbook vocab land at S2. WotLK keeps distinct spell ids per rank (`spell_ranks`); utility/cast-time downranking remains real (e.g. low-rank Frostbolt snare) even though mana-efficiency downranking is obsolete. Winrate is non-transitive — beating S1 does not imply beating stock.
+
+**Decision:**
+
+| Piece | Rule |
+|-------|------|
+| Vocab / policy | `SpellPool=spellbook`, `ActionPolicy=ranker`; ignore heuristic relevance for choice (DEC-018). Movement stays scripted. |
+| Scorer | **Multi-logit ranking head** (DEC-011): one forward → scores over a fixed per-class **spell-id** vocab; Softmax/argmax after a per-tick **legality mask** (`CanCastSpell`). |
+| Ranks | **Every known rank is its own action** (distinct spell id). S2 does **not** collapse to highest rank per name (today’s `MlDuelSpellPool` highest-rank map is wrong for S2 and must change on execute). |
+| Vocab membership | Frozen **level-80 class combat template** (non-noise spells a duel-farm 80 of that class can know), stored in the PBML. Organic leveling: max rank known ⇒ lower ranks known — no GM edge cases. Mask handles “not castable this tick.” Low-level bots may **load** the same PBML + mask; quality is not a freeze claim. |
+| Out of head | Mount / move primitives (stay in movement system; ML movement out of map scope). Full item/consumable bag (optional tiny allowlist later — not S2 freeze). |
+| Farm exploration | Softmax **τ=10** farm / **τ≤0** demo; shared `MlDuelBracket.SoftmaxTemperature`; **no ε** (same ops as S0/S1). |
+| Models | **Per-class** PBML + frozen spell-id vocab in manifest (DEC-019). |
+| Train recipe | (1) **Bootstrap** on available reward/outcome rows. (2) **DAgger ×2:** on-policy S2 rollouts; imitate **S1 ranker τ=0** on **queue ∩ legal spellbook** — expert label is the **concrete spell id** exposed by the queue Action. (3) **Expert-off:** reward/win only on full spellbook Softmax explore. Full **aggregate** retrain each round. **No** weight warm-start from S1 (labels only). |
+| Freeze gate | **Stacked**, both seats: clear **S1↔S1 + δ** *and* **stock↔stock + δ** (mixed seats as DEC-025). δ and duel counts are freeze-time ops on the stage card. Absolute 50% is not the gate. |
+| Stage artifacts | DEC-019: `artifacts/duel/s2/…`, conf `duel-s2`, git tag `stage/s2-<slug>`, stage card; demo `ActionPolicy=ranker`, `SpellPool=spellbook`, `SoftmaxTemperature≤0`. |
+
+**Why:** Spell-id multi-logit is the DEC-011 architecture and the only honest key for per-rank downranking. S1 is a better DAgger teacher than Softmax-stock; expert-off is what pressures off-queue casts. Shared Softmax τ keeps farm ops one dial. Stacked freeze makes the “better than S1 and stock” claim measurable (non-transitive WRs). Class@80 template keeps DEC-019 replay stable without per-level models.
+
+**Consequences:** Execute follow-on: multi-logit PBML schema + Engine path, stop highest-rank collapse for S2, queue Actions expose spell id for DAgger logs, trainer CE/aggregate loop, class template vocab builder, stacked eval harness. Blocked on S1 execute ([#18](https://github.com/gamesh411/mod-playerbots/issues/18)). Orchestration `duel-s2` remains [#13](https://github.com/gamesh411/mod-playerbots/issues/13).
 
