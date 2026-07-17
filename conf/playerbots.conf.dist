@@ -2198,6 +2198,8 @@ AiPlayerbot.MlRewardDelayMs = 2000
 # PBML1 duel ranker path (fallback when per-class paths are empty).
 AiPlayerbot.MlModelPathDuel = ""
 # DEC-025 per-class deploy paths. Prefer these over MlModelPathDuel.
+# Mixed-seat eval (ActionPolicy=ranker): leave the stock seat path empty so that class
+# uses Softmax-stock at SoftmaxTemperature (set ≤0 for freeze/argmax).
 AiPlayerbot.MlModelPathDuel.Warrior = ""
 AiPlayerbot.MlModelPathDuel.Mage = ""
 

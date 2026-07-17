@@ -10,12 +10,12 @@
 | **τ** | Farm **10**; demo/freeze **≤0** (argmax); shared `MlDuelBracket.SoftmaxTemperature` |
 | **Models** | Per-class PBML (warrior / mage; … as pool grows) |
 | **Train** | Reward bootstrap on S0 CSV → DAgger×2 (imitate Softmax-stock τ=0) → expert-off (reward) → aggregate retrain |
-| **Freeze gate** | Both seats beat stock↔stock baseline winrate by δ (not raw 50%) |
+| **Freeze gate** | Mixed seats beat stock↔stock baseline by **δ=0.02** (ops; not raw 50%) |
 | **Policy artifact** | Bootstrap: `artifacts/duel/s1/warrior.pbml`, `mage.pbml` (reward on S0 CSV; pre-DAgger) |
-| **Conf profile** | Deploy keys `MlModelPathDuel.Warrior` / `.Mage`; orchestration `duel-s1` still [#13](https://github.com/gamesh411/mod-playerbots/issues/13) |
+| **Conf profile** | Deploy keys `MlModelPathDuel.Warrior` / `.Mage`; mixed eval via empty stock-seat path + τ≤0 (`-DuelMixedSeat`); full `duel-s1` still [#13](https://github.com/gamesh411/mod-playerbots/issues/13) |
 | **Data tag** | Bootstrap slice: `ml_decisions_duel_v3.csv` (headerless OK); DAgger needs `duel_v4` + `expert_action` |
 | **Git tag** | _TBD `stage/s1-…`_ (after freeze gate) |
-| **Status** | execute in progress ([#18](https://github.com/gamesh411/mod-playerbots/issues/18)) — not frozen |
+| **Status** | execute in progress ([#18](https://github.com/gamesh411/mod-playerbots/issues/18)) — not frozen; mixed-seat path landed, freeze pending |
 
 ## Goal
 

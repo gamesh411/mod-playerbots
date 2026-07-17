@@ -55,8 +55,17 @@ python train_ranker.py --csv /path/v3.csv /path/v4.csv --out ../../artifacts/due
 python train_ranker.py --csv /path/v3.csv /path/v4.csv --out ../../artifacts/duel/s1/warrior.pbml \
   --duel-only --drop-duel-noise --self-class warrior
 
-# Winrate eval vs stock↔stock baseline:
+# Winrate eval vs stock↔stock baseline (diagnostic same-policy):
 python eval_duel_winrate.py --csv /path/v4.csv --baseline-csv /path/v3.csv --delta 0.02
+
+# DEC-025 freeze: mixed seats (one PBML cleared → Softmax-stock for that class; τ≤0).
+# Ops (wotlk-playerbots-server): -ServerProfile duel-farm -DuelMixedSeat arms-ranker|frost-ranker
+python eval_duel_winrate.py --csv /path/ml_decisions_duel_mixed_arms_ranker.csv --ranker-seat warrior \
+  --baseline-csv /path/v3.csv --delta 0.02
+python eval_duel_winrate.py --csv /path/ml_decisions_duel_mixed_frost_ranker.csv --ranker-seat mage \
+  --baseline-csv /path/v3.csv --delta 0.02
 ```
 
-When no valid model is loaded for a bot's class, `ranker` falls back to stock relevance order.
+When `ActionPolicy=ranker` and no PBML is loaded for a bot's class, that seat uses **Softmax-stock**
+(same path as `ActionPolicy=softmax-stock`, including multiplier filter). Clear one per-class path and
+set `SoftmaxTemperature≤0` for DEC-025 mixed-seat freeze eval.
