@@ -133,3 +133,17 @@ def fill_action_flags(name: str) -> list[float]:
         1.0 if is_damage_action(name) else 0.0,
         1.0 if is_focus_player_action(name) else 0.0,
     ]
+
+
+def action_id_features(name: str) -> list[float]:
+    """FNV-1a 32-bit → 4 floats in [-1, 1]. Must match HeuristicScores::FillActionIdFeatures."""
+    h = 2166136261
+    for b in name.strip().lower().encode("utf-8"):
+        h ^= b
+        h = (h * 16777619) & 0xFFFFFFFF
+    return [(((h >> (8 * i)) & 0xFF) / 127.5) - 1.0 for i in range(4)]
+
+
+def fill_action_input(name: str) -> list[float]:
+    """8 role flags + 4 name-id dims (PBML input tail; dim 82 with 70 state features)."""
+    return fill_action_flags(name) + action_id_features(name)

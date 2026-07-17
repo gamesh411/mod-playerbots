@@ -2,39 +2,37 @@
 
 | File | Class | Stage |
 |------|-------|--------|
-| `warrior.pbml` | Warrior | DAgger×2 + expert-off aggregate (v3+v4), 250k subsample |
-| `mage.pbml` | Mage | DAgger×2 + expert-off aggregate (v3+v4), 250k subsample |
+| `warrior.pbml` | Warrior | 82-D DAgger (v3+v4) |
+| `mage.pbml` | Mage | 82-D DAgger v4 + fixed expert elev (**no expert-off**) |
 | `baseline_stock_stock.md` | — | S0 Softmax-stock seat WRs |
 
-## Train path taken
+**PBML `input_dim = 82`** = 70 state + 8 role flags + 4 FNV action-id.
 
-1. **Bootstrap** — reward on `ml_decisions_duel_v3.csv`
-2. **DAgger ×2** — `ActionPolicy=ranker` farm → `ml_decisions_duel_v4.csv` (`expert_action`); score-up Softmax-stock τ=0
-3. **Expert-off** — reward-only retrain on aggregate v3+v4 (after each DAgger round)
+Teaching write-up of novel failure modes: [docs/ml/research/s1-training-lessons-learned.md](../../../docs/ml/research/s1-training-lessons-learned.md).
 
-## Eval snapshot
+## Fixes landed this session (uncommitted on `exp/duel-rl-curriculum`)
 
-| Seat / mode | WR | Notes |
-|------|-----:|-------|
-| Warrior stock↔stock (v3) | 74.6% | freeze baseline |
-| Mage stock↔stock (v3) | 25.8% | freeze baseline |
-| Warrior ranker↔ranker (v4) | ~93% | diagnostic only |
-| Mage ranker↔ranker (v4) | ~7% | diagnostic only |
-| Arms-ranker↔Frost-stock (pre-redeploy, ~3.4k) | **74.3%** (−0.3pp) | FAIL δ=0.02 — needs more train / farm |
-| Frost-ranker↔Arms-stock | _farming_ | `ml_decisions_duel_mixed_frost_ranker.csv` |
+1. **Expert elevation** (`train_ranker.py`) — always elevate Softmax-stock expert to `imitate_target`, including when learner already matched (losing seat was training teacher toward −λ).
+2. **Action-id pack** (Engine + trainer + FEATURES.md) — FNV name fingerprint so frostbolt ≠ fireball (was 200/200 identical ScoreDuel → ~6% WR).
+3. **Logger width guard** (`MlDecisionLogger.cpp`) — headerless 90-col v4 detected by column count so a restart cannot silently downgrade to 89-col mid-file (shifted `terminal`, froze eval at ~142 matches).
 
-δ = **0.02**. Mixed path: Engine empty-class → Softmax-stock; `-DuelMixedSeat arms-ranker|frost-ranker`.
+## Freeze eval (δ=0.02)
 
-## Deploy
+| Seat | WR | vs stock | n | Notes |
+|------|-----:|---------:|--:|-------|
+| Stock↔stock | W 74.6% / M 25.8% | — | ~45k | baseline |
+| Frost-ranker (78-D, broken) | ~6–9% | −16…−19pp | ~3k | flag collision |
+| Frost-ranker (82-D, thin) | 26.8% | +0.9pp | 142 | dirty / lucky |
+| Frost-ranker (82-D, clean) | **31.0%** | **+5.2pp** | **~2368** | **PASS** (need ≥27.8%); CSV `ml_decisions_duel_mixed_frost_ranker.csv` |
+| Arms-ranker (82-D) | **70.9%** | **−3.7pp** | **2502** | **FAIL** (need ≥76.6%); CSV `ml_decisions_duel_mixed_arms_ranker.csv` |
 
-```
-AiPlayerbot.MlDuelBracket.ActionPolicy = "ranker"
-AiPlayerbot.MlDuelBracket.SpellPool = "queue"
-AiPlayerbot.MlDuelBracket.SoftmaxTemperature = 10.0   # 0 for demo / mixed eval
-AiPlayerbot.MlModelPathDuel.Warrior = "<abs>/artifacts/duel/s1/warrior.pbml"
-AiPlayerbot.MlModelPathDuel.Mage = "<abs>/artifacts/duel/s1/mage.pbml"
-AiPlayerbot.MlDuelBracket.LogFile = "ml_decisions_duel_v4.csv"
-```
+**DEC-025 mixed gate:** not clear — frost PASS, arms FAIL.
 
-DAgger farm: `ensure_running.ps1 -ProfileGB 32 -ServerProfile duel-farm -RestartServers`  
-Mixed freeze eval: add `-DuelMixedSeat arms-ranker` or `frost-ranker`
+## Ops now
+
+Arms seat is the blocker. Options:
+
+1. More warrior DAgger (retrain on `duel_v4` / further on-policy) → re-run arms mixed eval.
+2. Accept S1 soft-fail on warrior and document frost-only clear (human call).
+
+Do not freeze / tag / close #18 until both seats clear (or soft-fail accepted) and DEC-019 packaging (manifest/tag/release) is done.

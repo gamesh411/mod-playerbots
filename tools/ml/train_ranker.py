@@ -12,6 +12,7 @@ Requires: numpy (pip install numpy)
 Schemas:
   duel_v4 / DEC-025: meta + expert_action + 70 combat features + 8 action flags
   duel_v3 / DEC-017: meta (no expert_action) + 70 + 8  (header optional)
+  PBML input:        70 + 8 flags + 4 action-id (FNV name fingerprint) = 82
   legacy v2:         12 combat features + 8 action flags (20 floats)
   legacy v1:         12 + 6 flags (18) with --allow-legacy-18
 """
@@ -26,10 +27,11 @@ from pathlib import Path
 
 import numpy as np
 
-from action_flags import fill_action_flags
+from action_flags import fill_action_input
 
 ACTION_COLS_V2 = [f"a{i}" for i in range(8)]
 ACTION_COLS_V1 = [f"a{i}" for i in range(6)]
+ACTION_ID_DIM = 4
 HIDDEN = 64
 
 # Class pack one-hot indices inside f0..f69 (FEATURES.md Class pack 12–21).
@@ -190,10 +192,11 @@ def load_dataset(
         # Aggregate OK: v3 contributes reward rows; v4 adds expert score-up when present.
         if imitate_expert and not has_expert:
             print(f"note [{path.name}]: no expert_action — reward rows only (no score-up)")
-        expected = len(feature_cols) + 8
+        expected = len(feature_cols) + 8 + ACTION_ID_DIM
         print(
             f"schema [{path.name}]: features={len(feature_cols)} flags={len(action_cols)} "
-            f"input_dim~={expected} expert_action={has_expert} headerless={headerless}"
+            f"action_id={ACTION_ID_DIM} input_dim~={expected} expert_action={has_expert} "
+            f"headerless={headerless}"
         )
 
         with path.open(newline="") as f:
@@ -236,20 +239,25 @@ def load_dataset(
                     if class_f is not None and feats[class_f] < 0.5:
                         skipped_class += 1
                         continue
-                    flags = [float(row[c]) for c in action_cols]
-                    if len(action_cols) == 6:
-                        flags.extend([0.0, 0.0])
                     y = float(row["reward"])
-                    # Outcome row for the action actually taken (aggregate / expert-off).
-                    xs.append(feats + flags)
+                    # Role flags + FNV action-id (id not logged; recomputed from name).
+                    xs.append(feats + fill_action_input(action))
                     ys.append(y)
                     # DEC-025 DAgger: score-up Softmax-stock τ=0 expert on learner states.
+                    # Always elevate the expert action — including when the learner already
+                    # matched it. Otherwise a losing seat (mage ~8–25% WR) trains the teacher
+                    # pick toward −λ on every matched loss and imitation never reaches stock.
                     if imitate_expert and has_expert:
                         expert = (row.get("expert_action") or "").strip()
-                        if expert and expert != action:
-                            xs.append(feats + fill_action_flags(expert))
-                            ys.append(max(y, imitate_target))
-                            expert_examples += 1
+                        if expert:
+                            elev = max(y, imitate_target)
+                            if expert == action:
+                                ys[-1] = elev
+                                expert_examples += 1
+                            else:
+                                xs.append(feats + fill_action_input(expert))
+                                ys.append(elev)
+                                expert_examples += 1
                 except (KeyError, ValueError):
                     skipped_bad += 1
                     continue

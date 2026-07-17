@@ -95,6 +95,14 @@ void MlScorer::BuildInputForDim(CombatFeatureVector const& features, std::string
         for (size_t i = 0; i < AF_COUNT; ++i)
             out[CF_FEATURE_COUNT + i] = flags[i];
     }
+
+    if (outDim >= CF_FEATURE_COUNT + AF_COUNT + AF_ID_COUNT)
+    {
+        float actionId[AF_ID_COUNT];
+        HeuristicScores::FillActionIdFeatures(actionName, actionId);
+        for (size_t i = 0; i < AF_ID_COUNT; ++i)
+            out[CF_FEATURE_COUNT + AF_COUNT + i] = actionId[i];
+    }
 }
 
 float MlScorer::ScoreDuel(PlayerbotAI* botAI, Action* action, CombatFeatureVector const& features)
@@ -110,7 +118,7 @@ float MlScorer::ScoreDuel(PlayerbotAI* botAI, Action* action, CombatFeatureVecto
         return 0.0f;
 
     size_t dim = model->InputDim();
-    if (dim != ML_INPUT_DIM && dim != ML_INPUT_DIM_V1)
+    if (dim != ML_INPUT_DIM && dim != ML_INPUT_DIM_NO_ACTION_ID && dim != ML_INPUT_DIM_V1)
         return 0.0f;
 
     std::vector<float> input(dim);

@@ -5,6 +5,7 @@
 
 #include "MlDecisionLogger.h"
 
+#include <algorithm>
 #include <fstream>
 #include <limits>
 
@@ -136,6 +137,18 @@ void MlDecisionLogger::WriteRow(MlPendingDecision const& d, float reward, float 
             std::string firstLine;
             std::getline(probe, firstLine);
             logExpertAction = firstLine.find("expert_action") != std::string::npos;
+            // Headerless duel_v4 is 90 cols (12 meta incl. expert_action + 70 + 8). If a prior
+            // process wrote headerless v4 then restarted, the first data line has no substring
+            // "expert_action" — detect by width so we do not silently downgrade to 89-col v3
+            // mid-file (shifts terminal and breaks eval).
+            if (!logExpertAction && !firstLine.empty())
+            {
+                size_t const commas = static_cast<size_t>(std::count(firstLine.begin(), firstLine.end(), ','));
+                size_t const cols = commas + 1;
+                size_t const v4Cols = 12 + CF_FEATURE_COUNT + AF_COUNT; // 90
+                if (cols >= v4Cols)
+                    logExpertAction = true;
+            }
         }
         headerWritten = true;
     }

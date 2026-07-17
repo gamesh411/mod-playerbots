@@ -11,11 +11,16 @@
 | **Conf profile** | _TBD `duel-s2`_ (`ActionPolicy=ranker`, `SpellPool=spellbook`, demo τ≤0) |
 | **Data tag** | _TBD_ |
 | **Git tag** | _TBD `stage/s2-…`_ |
-| **Status** | design locked — not frozen |
+| **Status** | design locked — not frozen; execute [#19](https://github.com/gamesh411/mod-playerbots/issues/19). Blocked on S1 freeze ([#18](https://github.com/gamesh411/mod-playerbots/issues/18)). **DEC-027:** verify **ground-targeted** casts (Water Elemental Frost Nova) before claiming pet-root combos. |
 
 ## Goal
 
 Expert-style atomic actions — cast any currently legal ability (including mid/low ranks), not only what strategies enumerate.
+
+## Open readiness (DEC-027)
+
+- Movement stays scripted (no kite ML yet).
+- Pet / ground-click abilities (e.g. Water Elemental Frost Nova) may need Engine support beyond unit-target `CastSpell` — confirm on S2 execute.
 
 ## Freeze gate (DEC-026)
 
