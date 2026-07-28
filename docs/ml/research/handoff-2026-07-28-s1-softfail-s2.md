@@ -91,6 +91,8 @@ Mixed-seat eval:
 
 ## Suggested first move in new chat
 
+**Superseded for current frontier:** use [handoff-2026-07-29-s2-execute-freeze-fail.md](handoff-2026-07-29-s2-execute-freeze-fail.md) (S2 runtime + first freeze FAIL). Historical S1 start checklist kept below.
+
 1. Claim [#19](https://github.com/gamesh411/mod-playerbots/issues/19)
 2. Read DEC-026 + `curriculum/s2-spellbook-ranker.md` + Engine/spell-pool current state
 3. Chart S2 execute plan (ground-target Nova check early)
