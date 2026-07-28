@@ -291,7 +291,10 @@ bool Engine::DoNextAction(Unit* /*unit*/, uint32 /*depth*/, bool minimal)
     PushDefaultActions();
 
     Player* const self = botAI->GetBot();
-    bool const inDuel = self && self->duel && self->duel->Opponent;
+    // Only IN_PROGRESS: CHALLENGED/COUNTDOWN still set player->duel, and treating those as
+    // "in duel" lets spellbook/ranker short-circuit starve accept duel (and other packet actions).
+    bool const inDuel = self && self->duel && self->duel->Opponent &&
+                        self->duel->State == DUEL_STATE_IN_PROGRESS;
     std::string const& policy = sPlayerbotAIConfig.mlDuelBracketActionPolicy;
     std::string const& spellPool = sPlayerbotAIConfig.mlDuelBracketSpellPool;
     bool const duelBracketOn = inDuel && sPlayerbotAIConfig.mlDuelBracketEnabled;
