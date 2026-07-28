@@ -1,38 +1,53 @@
 # S2 models (DEC-026 execute — not frozen)
 
-| File | Class | Stage |
+| File | Class | Notes |
 |------|-------|--------|
-| `warrior.pbml` | Warrior | _TBD multi-logit after S2 farm + train_ |
-| `mage.pbml` | Mage | _TBD multi-logit after S2 farm + train_ |
-| `vocab.warrior.txt` | Warrior | Optional frozen class@80 spell-id list |
-| `mage.vocab.txt` / `vocab.mage.txt` | Mage | Optional frozen class@80 spell-id list |
+| `warrior.pbml` | Warrior | Expert-off aggregate CE (2026-07-29); `in=70` `out=49` vocab=49 |
+| `mage.pbml` | Mage | Expert-off aggregate CE (2026-07-29); `in=70` `out=220` vocab=220 |
+| `vocab.warrior.txt` | Warrior | Frozen spell-id list (49) used from DAgger r2 onward |
+| `vocab.mage.txt` | Mage | Frozen spell-id list (220) |
+
+**Freeze status:** not cut. First stacked mixed-seat eval **failed hard** (Arms 0.0% / Frost 0.1%). See [`docs/ml/research/handoff-2026-07-29-s2-execute-freeze-fail.md`](../../docs/ml/research/handoff-2026-07-29-s2-execute-freeze-fail.md).
+
+Local-only checkpoints (often untracked): `*.pre-r2-*`, `*.pre-r3-*`, `*.pre-eo-*` (weights before each retrain).
 
 ## Train / deploy
 
-Bootstrap farm writes spell-id `action` / S1-teacher `expert_action` to `ml_decisions_duel_s2.csv`
-(`ActionPolicy=ranker`, `SpellPool=spellbook`, empty learner paths ⇒ uniform Softmax explore).
+Farm CSVs on the server host (aggregate all rounds):
+
+- `ml_decisions_duel_s2.csv` — bootstrap
+- `ml_decisions_duel_s2_r2.csv` / `_r3.csv` — DAgger
+- `ml_decisions_duel_s2_eo.csv` — expert-off
 
 ```bash
 cd tools/ml
-python train_spellbook_ranker.py --csv /path/ml_decisions_duel_s2.csv \
-  --out ../../artifacts/duel/s2/warrior.pbml --self-class warrior --duel-only
-python train_spellbook_ranker.py --csv /path/ml_decisions_duel_s2.csv \
-  --out ../../artifacts/duel/s2/mage.pbml --self-class mage --duel-only --imitate-expert
+# DAgger (imitate S1 teacher labels in expert_action)
+python train_spellbook_ranker.py --csv .../s2.csv .../s2_r2.csv \
+  --out ../../artifacts/duel/s2/warrior.pbml --self-class warrior \
+  --duel-only --drop-duel-noise --imitate-expert \
+  --vocab-file ../../artifacts/duel/s2/vocab.warrior.txt --epochs 30 --max-rows 400000
+
+# Expert-off (no --imitate-expert)
+python train_spellbook_ranker.py --csv .../s2.csv .../s2_r2.csv .../s2_r3.csv .../s2_eo.csv \
+  --out ../../artifacts/duel/s2/warrior.pbml --self-class warrior \
+  --duel-only --drop-duel-noise \
+  --vocab-file ../../artifacts/duel/s2/vocab.warrior.txt --epochs 30 --max-rows 400000
 ```
 
-Deploy: set `MlModelPathDuel.Warrior` / `.Mage` to these PBMLs; keep
-`MlModelPathDuelTeacher.*` on S1 round-2 for DAgger rounds.
+Deploy: `MlModelPathDuel.Warrior` / `.Mage` → these PBMLs; keep `MlModelPathDuelTeacher.*` on S1 round-2 for DAgger.
 
 ## Freeze gate (DEC-026 stacked)
 
-Both seats must clear **S1↔S1 + δ** *and* **stock↔stock + δ**:
-
 ```bash
-python eval_duel_winrate.py --csv mixed_s2_arms.csv --ranker-seat warrior \
+python eval_duel_winrate.py --csv ml_decisions_duel_mixed_arms_ranker.csv --ranker-seat warrior \
+  --baseline-csv ml_decisions_duel_v3.csv --baseline-csv-s1 ml_decisions_duel_v4.csv --delta 0.02
+python eval_duel_winrate.py --csv ml_decisions_duel_mixed_frost_ranker.csv --ranker-seat mage \
   --baseline-csv ml_decisions_duel_v3.csv --baseline-csv-s1 ml_decisions_duel_v4.csv --delta 0.02
 ```
+
+First measured gate (2026-07-29): both seats FAIL (see handoff). Do not cut `stage/s2` until diagnosis + re-eval.
 
 ## DEC-027
 
 Confirm `Playerbots.log` shows `DEC-027 Freeze 33395 Targets=...` at bracket load and
-`DEC-027 Freeze cast OK` when Water Elemental Freeze is issued.
+`DEC-027 Freeze cast OK` when Water Elemental Freeze is issued. Farm action counts for 33395 stayed ~0 through expert-off.
