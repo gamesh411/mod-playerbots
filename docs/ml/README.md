@@ -28,6 +28,7 @@ Stage freeze contract (artifacts / conf / tags / cards): [#8](https://github.com
 | [../../tools/ml/README.md](../../tools/ml/README.md) | Train / analyze commands |
 | [research/s1-training-lessons-learned.md](research/s1-training-lessons-learned.md) | S1 execute (#18): novel failure modes / debugging intuition |
 | [research/handoff-2026-07-28-s1-softfail-s2.md](research/handoff-2026-07-28-s1-softfail-s2.md) | Session handoff: S1 soft-fail (DEC-028) → S2 execute (#19) |
+| [research/handoff-2026-07-29-s2-execute-freeze-fail.md](research/handoff-2026-07-29-s2-execute-freeze-fail.md) | S2 runtime + DAgger/expert-off + first stacked freeze FAIL (near-0% WR) |
 
 ## Archive
 
