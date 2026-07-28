@@ -28,6 +28,14 @@
 
 namespace
 {
+bool IsRealPlayerParticipant(Player* p)
+{
+    if (!p)
+        return true;
+    PlayerbotAI* ai = GET_PLAYERBOT_AI(p);
+    return !ai || ai->IsRealPlayer();
+}
+
 std::vector<std::string> SplitCsv(std::string const& s, char sep)
 {
     std::vector<std::string> out;
@@ -622,6 +630,11 @@ void MlDuelBracket::OnDuelStart(Player* p1, Player* p2)
     ClearWaiting(p2->GetGUID());
     EnsureUnmounted(p1);
     EnsureUnmounted(p2);
+
+    // Sparring vs a real player: keep unmount/wait cleanup, but do not register or log.
+    // Farm bot-vs-bot CSV stays clean for DAgger.
+    if (IsRealPlayerParticipant(p1) || IsRealPlayerParticipant(p2))
+        return;
 
     uint32 matchId = 0;
     {

@@ -32,6 +32,14 @@ void MlDecisionLogger::OnActionExecuted(PlayerbotAI* botAI, std::string const& a
     if (!bot || !bot->IsInWorld() || !bot->duel || !bot->duel->Opponent)
         return;
 
+    // Sparring vs real player must not pollute duel_v4 (belt-and-suspenders with OnDuelStart skip).
+    if (Player* foe = bot->duel->Opponent->ToPlayer())
+    {
+        PlayerbotAI* foeAI = GET_PLAYERBOT_AI(foe);
+        if (!foeAI || foeAI->IsRealPlayer())
+            return;
+    }
+
     if (actionName.empty() || CombatDecisionUtil::IsMetaAction(actionName))
         return;
 
@@ -290,8 +298,18 @@ void MlDecisionLogger::LogDuelStartSnapshot(Player* bot, uint32 matchId)
         return;
 
     PlayerbotAI* botAI = GET_PLAYERBOT_AI(bot);
-    if (!botAI)
+    if (!botAI || botAI->IsRealPlayer())
         return;
+
+    if (bot->duel && bot->duel->Opponent)
+    {
+        if (Player* foe = bot->duel->Opponent->ToPlayer())
+        {
+            PlayerbotAI* foeAI = GET_PLAYERBOT_AI(foe);
+            if (!foeAI || foeAI->IsRealPlayer())
+                return;
+        }
+    }
 
     AiObjectContext* context = botAI->GetAiObjectContext();
     if (!context)
