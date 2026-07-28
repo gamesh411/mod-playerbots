@@ -474,6 +474,9 @@ bool PlayerbotAIConfig::Initialize()
     mlModelPathDuel = sConfigMgr->GetOption<std::string>("AiPlayerbot.MlModelPathDuel", "");
     mlModelPathDuelWarrior = sConfigMgr->GetOption<std::string>("AiPlayerbot.MlModelPathDuel.Warrior", "");
     mlModelPathDuelMage = sConfigMgr->GetOption<std::string>("AiPlayerbot.MlModelPathDuel.Mage", "");
+    mlModelPathDuelTeacherWarrior =
+        sConfigMgr->GetOption<std::string>("AiPlayerbot.MlModelPathDuelTeacher.Warrior", "");
+    mlModelPathDuelTeacherMage = sConfigMgr->GetOption<std::string>("AiPlayerbot.MlModelPathDuelTeacher.Mage", "");
 
     mlDuelBracketEnabled = sConfigMgr->GetOption<bool>("AiPlayerbot.MlDuelBracket.Enabled", false);
     mlDuelBracketPairs = sConfigMgr->GetOption<std::string>("AiPlayerbot.MlDuelBracket.Pairs", "1:0-8:2");
@@ -496,7 +499,8 @@ bool PlayerbotAIConfig::Initialize()
     mlDuelBracketResetCooldownsOnDuelEnd =
         sConfigMgr->GetOption<bool>("AiPlayerbot.MlDuelBracket.ResetCooldownsOnDuelEnd", false);
     sMlDuelBracket.LoadFromConfig();
-    if (!mlModelPathDuel.empty() || !mlModelPathDuelWarrior.empty() || !mlModelPathDuelMage.empty())
+    if (!mlModelPathDuel.empty() || !mlModelPathDuelWarrior.empty() || !mlModelPathDuelMage.empty() ||
+        !mlModelPathDuelTeacherWarrior.empty() || !mlModelPathDuelTeacherMage.empty())
         sMlScorer.Reload();
 
     useGroundMountAtMinLevel = sConfigMgr->GetOption<int32>("AiPlayerbot.UseGroundMountAtMinLevel", 20);

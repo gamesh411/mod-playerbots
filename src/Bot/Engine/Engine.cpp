@@ -80,6 +80,70 @@ ActionBasket* SelectSoftmaxBasket(std::vector<SoftmaxCandidate> const& support, 
     }
     return selected;
 }
+
+size_t SelectSoftmaxIndex(std::vector<float> const& logits, float tau)
+{
+    if (logits.empty())
+        return 0;
+
+    if (tau <= 0.0f)
+    {
+        size_t best = 0;
+        float bestLogit = -std::numeric_limits<float>::infinity();
+        for (size_t i = 0; i < logits.size(); ++i)
+        {
+            if (logits[i] > bestLogit)
+            {
+                bestLogit = logits[i];
+                best = i;
+            }
+        }
+        return best;
+    }
+
+    float maxLogit = logits.front();
+    for (float logit : logits)
+        if (logit > maxLogit)
+            maxLogit = logit;
+
+    float sumWeight = 0.0f;
+    std::vector<float> weights;
+    weights.reserve(logits.size());
+    for (float logit : logits)
+    {
+        // Masked (-inf) legal slots stay zero weight.
+        float const weight = std::isfinite(logit) ? std::exp((logit - maxLogit) / tau) : 0.0f;
+        weights.push_back(weight);
+        sumWeight += weight;
+    }
+    if (sumWeight <= 0.0f)
+        return SelectSoftmaxIndex(logits, 0.0f);
+
+    float const roll = frand(0.0f, sumWeight);
+    float cumulative = 0.0f;
+    for (size_t i = 0; i < weights.size(); ++i)
+    {
+        cumulative += weights[i];
+        if (roll <= cumulative)
+            return i;
+    }
+    return weights.size() - 1;
+}
+
+float DuelSoftmaxTau(Player* self)
+{
+    float softmaxTau = sPlayerbotAIConfig.mlDuelBracketSoftmaxTemperature;
+    if (self && self->duel && self->duel->Opponent)
+    {
+        if (Player* foe = self->duel->Opponent->ToPlayer())
+        {
+            PlayerbotAI* foeAI = GET_PLAYERBOT_AI(foe);
+            if (!foeAI || foeAI->IsRealPlayer())
+                softmaxTau = 0.0f;
+        }
+    }
+    return softmaxTau;
+}
 } // namespace
 
 Engine::Engine(PlayerbotAI* botAI, AiObjectContext* factory) : PlayerbotAIAware(botAI), aiObjectContext(factory)
@@ -228,7 +292,80 @@ bool Engine::DoNextAction(Unit* /*unit*/, uint32 /*depth*/, bool minimal)
     bool const inDuel = self && self->duel && self->duel->Opponent;
     std::string const& policy = sPlayerbotAIConfig.mlDuelBracketActionPolicy;
     std::string const& spellPool = sPlayerbotAIConfig.mlDuelBracketSpellPool;
-    bool const useSpellbookPool = inDuel && sPlayerbotAIConfig.mlDuelBracketEnabled && policy == "random" &&
+    bool const duelBracketOn = inDuel && sPlayerbotAIConfig.mlDuelBracketEnabled;
+
+    // DEC-026: ranker + spellbook. Multi-logit when loaded; else uniform Softmax explore (bootstrap).
+    bool const useSpellbookRanker = duelBracketOn && policy == "ranker" && spellPool == "spellbook" && self;
+    if (useSpellbookRanker)
+    {
+        AiObjectContext* context = aiObjectContext;
+        std::vector<MlDuelSpellCandidate> candidates = MlDuelSpellPool::Collect(botAI, self->duel->Opponent);
+        if (!candidates.empty())
+        {
+            CombatFeatureVector const features = AI_VALUE(CombatFeatureVector, "combat decision features");
+            std::vector<float> logits;
+            bool const scored = sMlScorer.ScoreSpellbook(botAI, features, candidates, logits) &&
+                                logits.size() == candidates.size();
+            if (!scored)
+            {
+                // Bootstrap / cold start: equal logits ⇒ Softmax(τ) is uniform over legal spell ids.
+                logits.assign(candidates.size(), 0.0f);
+            }
+
+            // DAgger expert: S1 teacher τ=0 on queue ∩ legal spellbook (DEC-026).
+            // Fallback: Softmax-stock τ=0 relevance when no teacher PBML.
+            std::string duelExpertAction;
+            float bestExpert = -std::numeric_limits<float>::infinity();
+            std::string bestExpertName;
+            bool const useTeacher = sMlScorer.HasTeacherFor(self->getClass());
+            for (ActionBasket* candidate : queue.Baskets())
+            {
+                if (!candidate || !candidate->getAction())
+                    continue;
+                Action* candidateAction = InitializeAction(candidate->getAction());
+                if (!candidateAction || !candidateAction->isUseful() || !candidateAction->isPossible() ||
+                    !CombatDecisionUtil::IsLoggableCombatAction(candidateAction->getName()))
+                    continue;
+
+                float const expertLogit = useTeacher ? sMlScorer.ScoreDuelTeacher(botAI, candidateAction, features)
+                                                     : candidate->getRelevance();
+                if (expertLogit > bestExpert)
+                {
+                    bestExpert = expertLogit;
+                    bestExpertName = candidateAction->getName();
+                }
+            }
+            if (!bestExpertName.empty())
+            {
+                uint32 const expertSpellId = AI_VALUE2(uint32, "spell id", bestExpertName);
+                if (expertSpellId)
+                {
+                    for (MlDuelSpellCandidate const& cand : candidates)
+                    {
+                        if (cand.spellId == expertSpellId)
+                        {
+                            duelExpertAction = cand.actionName;
+                            break;
+                        }
+                    }
+                }
+            }
+
+            size_t const pickIdx = SelectSoftmaxIndex(logits, DuelSoftmaxTau(self));
+            MlDuelSpellCandidate const& pick = candidates[pickIdx];
+            if (MlDuelSpellPool::Execute(botAI, pick))
+            {
+                LogAction("A:%s - %s", pick.actionName.c_str(),
+                          scored ? "DUEL-SPELLBOOK-RANKER" : "DUEL-SPELLBOOK-EXPLORE");
+                if (sPlayerbotAIConfig.mlLoggingEnabled)
+                    sMlDecisionLogger.OnActionExecuted(botAI, pick.actionName, 0.0f, logits[pickIdx],
+                                                       duelExpertAction);
+                return true;
+            }
+        }
+    }
+
+    bool const useSpellbookPool = duelBracketOn && policy == "random" &&
                                   (spellPool == "spellbook" || spellPool == "union");
     if (useSpellbookPool)
     {
@@ -327,15 +464,7 @@ bool Engine::DoNextAction(Unit* /*unit*/, uint32 /*depth*/, bool minimal)
 
             if (!support.empty())
             {
-                // Hands-on sparring vs a real player: argmax (tau=0). Farm bot-vs-bot keeps conf tau.
-                float softmaxTau = sPlayerbotAIConfig.mlDuelBracketSoftmaxTemperature;
-                if (Player* foe = self->duel->Opponent->ToPlayer())
-                {
-                    PlayerbotAI* foeAI = GET_PLAYERBOT_AI(foe);
-                    if (!foeAI || foeAI->IsRealPlayer())
-                        softmaxTau = 0.0f;
-                }
-                ActionBasket* selected = SelectSoftmaxBasket(support, softmaxTau);
+                ActionBasket* selected = SelectSoftmaxBasket(support, DuelSoftmaxTau(self));
                 if (selected)
                 {
                     basket = selected;

@@ -2535,6 +2535,9 @@ AiPlayerbot.MlModelPathDuel = ""
 # uses Softmax-stock at SoftmaxTemperature (set ≤0 for freeze/argmax).
 AiPlayerbot.MlModelPathDuel.Warrior = ""
 AiPlayerbot.MlModelPathDuel.Mage = ""
+# DEC-026 S2 DAgger teacher (S1 scalar PBML). Used for expert_action when SpellPool=spellbook.
+AiPlayerbot.MlModelPathDuelTeacher.Warrior = ""
+AiPlayerbot.MlModelPathDuelTeacher.Mage = ""
 
 # Enable the idle random-bot duel bracket.
 AiPlayerbot.MlDuelBracket.Enabled = 0
@@ -2544,7 +2547,7 @@ AiPlayerbot.MlDuelBracket.Pairs = "1:0-8:2"
 AiPlayerbot.MlDuelBracket.LogFile = "ml_decisions_duel_v4.csv"
 # random | softmax-stock | heuristic | ranker (DEC-018 / DEC-022 / DEC-025).
 AiPlayerbot.MlDuelBracket.ActionPolicy = "softmax-stock"
-# queue | spellbook | union. Spellbook/union apply only to ActionPolicy=random.
+# queue | spellbook | union. Spellbook/union: random pool, or ranker multi-logit (DEC-026 S2).
 AiPlayerbot.MlDuelBracket.SpellPool = "queue"
 # Softmax temperature for softmax-stock and ranker. Farm default 10; ≤0 ⇒ argmax (demo/freeze).
 # Sparring vs a real player always uses argmax (tau=0) regardless of this value; farm bot-vs-bot keeps it.

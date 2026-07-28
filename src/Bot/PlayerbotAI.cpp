@@ -46,8 +46,11 @@
 #include "ServerFacade.h"
 #include "SharedDefines.h"
 #include "SocialMgr.h"
+#include "Pet.h"
+#include "Spell.h"
 #include "SpellAuraEffects.h"
 #include "SpellInfo.h"
+#include "SpellMgr.h"
 #include "Transport.h"
 #include "Unit.h"
 #include "UpdateTime.h"
@@ -3289,7 +3292,7 @@ bool PlayerbotAI::CanCastSpell(uint32 spellid, Unit* target, bool checkHasSpell,
 
     if (Pet* pet = bot->GetPet())
         if (pet->HasSpell(spellid))
-            return true;
+            return CanCastPetSpell(spellid, target);
 
     if (checkHasSpell && !bot->HasSpell(spellid))
     {
@@ -3429,9 +3432,10 @@ bool PlayerbotAI::CanCastSpell(uint32 spellid, GameObject* goTarget, bool checkH
     if (bot->HasUnitState(UNIT_STATE_LOST_CONTROL))
         return false;
 
-    Pet* pet = bot->GetPet();
-    if (pet && pet->HasSpell(spellid))
-        return true;
+    // Pet spells need a Unit/dest; GO path is player-caster only.
+    if (Pet* pet = bot->GetPet())
+        if (pet->HasSpell(spellid))
+            return false;
 
     if (checkHasSpell && !bot->HasSpell(spellid))
         return false;
@@ -3484,9 +3488,9 @@ bool PlayerbotAI::CanCastSpell(uint32 spellid, float x, float y, float z, bool c
     if (!spellid)
         return false;
 
-    Pet* pet = bot->GetPet();
-    if (pet && pet->HasSpell(spellid))
-        return true;
+    if (Pet* pet = bot->GetPet())
+        if (pet->HasSpell(spellid))
+            return CanCastPetSpell(spellid, x, y, z);
 
     if (checkHasSpell && !bot->HasSpell(spellid))
         return false;
@@ -3540,6 +3544,251 @@ bool PlayerbotAI::CastSpell(std::string const name, Unit* target, Item* itemTarg
     }
 
     return result;
+}
+
+bool PlayerbotAI::CanCastPetSpell(uint32 spellId, Unit* target)
+{
+    if (!spellId || !bot)
+        return false;
+
+    Pet* pet = bot->GetPet();
+    if (!pet || !pet->IsAlive() || !pet->HasSpell(spellId))
+        return false;
+
+    SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(spellId);
+    if (!spellInfo || spellInfo->IsPassive())
+        return false;
+
+    if (!target)
+        target = bot;
+    if (!IsValidUnit(target))
+        return false;
+
+    if (Creature const* creaturePet = pet->ToCreature())
+        if (creaturePet->HasSpellCooldown(spellId))
+            return false;
+
+    if (spellInfo->StartRecoveryCategory > 0)
+        if (CharmInfo* charmInfo = pet->GetCharmInfo())
+            if (charmInfo->GetGlobalCooldownMgr().HasGlobalCooldown(spellInfo))
+                return false;
+
+    Spell* spell = new Spell(pet, spellInfo, TRIGGERED_NONE);
+    spell->LoadScripts();
+
+    // Always check against the intended unit target (opponent), not the owner.
+    spell->m_targets.SetUnitTarget(target);
+    if (spellInfo->Targets & TARGET_FLAG_DEST_LOCATION)
+        spell->m_targets.SetDst(*target);
+    else
+    {
+        for (uint8 i = 0; i < MAX_SPELL_EFFECTS; ++i)
+        {
+            uint32 const ta = spellInfo->Effects[i].TargetA.GetTarget();
+            if (ta == TARGET_DEST_TARGET_ENEMY || ta == TARGET_DEST_TARGET_ANY || ta == TARGET_UNIT_DEST_AREA_ENEMY ||
+                ta == TARGET_DEST_DYNOBJ_ENEMY || ta == TARGET_DEST_DEST)
+            {
+                spell->m_targets.SetDst(*target);
+                break;
+            }
+        }
+    }
+
+    SpellCastResult result = spell->CheckPetCast(target);
+    delete spell;
+
+    switch (result)
+    {
+        case SPELL_CAST_OK:
+        case SPELL_FAILED_UNIT_NOT_INFRONT:
+        case SPELL_FAILED_OUT_OF_RANGE:
+        case SPELL_FAILED_LINE_OF_SIGHT:
+        case SPELL_FAILED_MOVING:
+        case SPELL_FAILED_TRY_AGAIN:
+            return true;
+        default:
+            return false;
+    }
+}
+
+bool PlayerbotAI::CanCastPetSpell(uint32 spellId, float x, float y, float z)
+{
+    if (!spellId || !bot)
+        return false;
+
+    Pet* pet = bot->GetPet();
+    if (!pet || !pet->IsAlive() || !pet->HasSpell(spellId))
+        return false;
+
+    SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(spellId);
+    if (!spellInfo || spellInfo->IsPassive())
+        return false;
+
+    if (Creature const* creaturePet = pet->ToCreature())
+        if (creaturePet->HasSpellCooldown(spellId))
+            return false;
+
+    if (spellInfo->StartRecoveryCategory > 0)
+        if (CharmInfo* charmInfo = pet->GetCharmInfo())
+            if (charmInfo->GetGlobalCooldownMgr().HasGlobalCooldown(spellInfo))
+                return false;
+
+    Unit* unitTarget = bot->GetSelectedUnit();
+    if (!unitTarget || !IsValidUnit(unitTarget))
+        unitTarget = bot;
+
+    Spell* spell = new Spell(pet, spellInfo, TRIGGERED_NONE);
+    spell->LoadScripts();
+    spell->m_targets.SetDst(x, y, z, 0.f);
+    spell->m_targets.SetUnitTarget(unitTarget);
+
+    SpellCastResult result = spell->CheckPetCast(unitTarget);
+    delete spell;
+
+    switch (result)
+    {
+        case SPELL_CAST_OK:
+        case SPELL_FAILED_UNIT_NOT_INFRONT:
+        case SPELL_FAILED_OUT_OF_RANGE:
+        case SPELL_FAILED_LINE_OF_SIGHT:
+        case SPELL_FAILED_MOVING:
+        case SPELL_FAILED_TRY_AGAIN:
+            return true;
+        default:
+            return false;
+    }
+}
+
+bool PlayerbotAI::CommandPetCastSpell(uint32 spellId, Unit* target)
+{
+    if (!spellId || !bot)
+        return false;
+
+    Pet* pet = bot->GetPet();
+    if (!pet || !pet->IsAlive() || !pet->HasSpell(spellId))
+        return false;
+
+    SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(spellId);
+    if (!spellInfo || spellInfo->IsPassive())
+        return false;
+
+    if (!target)
+        target = bot;
+    if (!IsValidUnit(target))
+        return false;
+
+    Spell* spell = new Spell(pet, spellInfo, TRIGGERED_NONE);
+    spell->LoadScripts();
+
+    SpellCastTargets targets;
+    // Cast on the intended target (duel opponent), with dest at that unit for ground AoE.
+    targets.SetUnitTarget(target);
+    if (spellInfo->Targets & TARGET_FLAG_DEST_LOCATION)
+        targets.SetDst(*target);
+    else
+    {
+        for (uint8 i = 0; i < MAX_SPELL_EFFECTS; ++i)
+        {
+            uint32 const ta = spellInfo->Effects[i].TargetA.GetTarget();
+            if (ta == TARGET_DEST_TARGET_ENEMY || ta == TARGET_DEST_TARGET_ANY || ta == TARGET_UNIT_DEST_AREA_ENEMY ||
+                ta == TARGET_DEST_DYNOBJ_ENEMY || ta == TARGET_DEST_DEST)
+            {
+                targets.SetDst(*target);
+                break;
+            }
+        }
+    }
+
+    spell->m_targets = targets;
+    SpellCastResult check = spell->CheckPetCast(target);
+    if (check == SPELL_FAILED_UNIT_NOT_INFRONT)
+    {
+        pet->SetInFront(target);
+        check = SPELL_CAST_OK;
+    }
+
+    if (check != SPELL_CAST_OK && check != SPELL_FAILED_OUT_OF_RANGE && check != SPELL_FAILED_LINE_OF_SIGHT)
+    {
+        delete spell;
+        return false;
+    }
+
+    if (!spellInfo->IsCooldownStartedOnEvent())
+        if (Creature* creaturePet = pet->ToCreature())
+            creaturePet->AddSpellCooldown(spellId, 0, 0);
+
+    if (Unit* unitTarget = targets.GetUnitTarget())
+        if (!bot->IsFriendlyTo(unitTarget) && !pet->isPossessed() && !pet->IsVehicle())
+            if (pet->GetVictim() != unitTarget)
+                if (CreatureAI* ai = pet->AI())
+                    ai->AttackStart(unitTarget);
+
+    SpellCastResult result = spell->prepare(&targets);
+    bool const ok = result == SPELL_CAST_OK || result == SPELL_FAILED_SPELL_IN_PROGRESS;
+    // DEC-027 readiness: Water Elemental Freeze must command-cast with dest, not autocast toggle.
+    if (spellId == 33395)
+    {
+        float dx = target->GetPositionX();
+        float dy = target->GetPositionY();
+        float dz = target->GetPositionZ();
+        if (targets.HasDst())
+            if (WorldLocation const* dst = targets.GetDstPos())
+            {
+                dx = dst->GetPositionX();
+                dy = dst->GetPositionY();
+                dz = dst->GetPositionZ();
+            }
+        LOG_INFO("playerbots",
+                 "DEC-027 Freeze cast {} bot={} pet={} target={} dest=({:.1f},{:.1f},{:.1f}) result={}",
+                 ok ? "OK" : "FAIL", bot->GetName(), pet->GetName(), target->GetName(), dx, dy, dz, uint32(result));
+    }
+    return ok;
+}
+
+bool PlayerbotAI::CommandPetCastSpell(uint32 spellId, float x, float y, float z)
+{
+    if (!spellId || !bot)
+        return false;
+
+    Pet* pet = bot->GetPet();
+    if (!pet || !pet->IsAlive() || !pet->HasSpell(spellId))
+        return false;
+
+    SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(spellId);
+    if (!spellInfo || spellInfo->IsPassive())
+        return false;
+
+    Unit* unitTarget = bot->GetSelectedUnit();
+    if (!unitTarget || !IsValidUnit(unitTarget))
+        unitTarget = bot;
+
+    Spell* spell = new Spell(pet, spellInfo, TRIGGERED_NONE);
+    spell->LoadScripts();
+
+    SpellCastTargets targets;
+    targets.SetDst(x, y, z, 0.f);
+    targets.SetUnitTarget(unitTarget);
+
+    spell->m_targets = targets;
+    SpellCastResult check = spell->CheckPetCast(unitTarget);
+    if (check == SPELL_FAILED_UNIT_NOT_INFRONT)
+    {
+        pet->SetInFront(unitTarget);
+        check = SPELL_CAST_OK;
+    }
+
+    if (check != SPELL_CAST_OK && check != SPELL_FAILED_OUT_OF_RANGE && check != SPELL_FAILED_LINE_OF_SIGHT)
+    {
+        delete spell;
+        return false;
+    }
+
+    if (!spellInfo->IsCooldownStartedOnEvent())
+        if (Creature* creaturePet = pet->ToCreature())
+            creaturePet->AddSpellCooldown(spellId, 0, 0);
+
+    SpellCastResult result = spell->prepare(&targets);
+    return result == SPELL_CAST_OK || result == SPELL_FAILED_SPELL_IN_PROGRESS;
 }
 
 bool PlayerbotAI::CastSpell(uint32 spellId, Unit* target, Item* itemTarget)
@@ -3828,25 +4077,9 @@ bool PlayerbotAI::CastSpell(uint32 spellId, float x, float y, float z, Item* ite
 
     Pet* pet = bot->GetPet();
     SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(spellId);
+    // xyz API is an explicit cast-at-location request — command the pet, do not toggle autocast.
     if (pet && pet->HasSpell(spellId))
-    {
-        bool autocast = false;
-        for (unsigned int& m_autospell : pet->m_autospells)
-        {
-            if (m_autospell == spellId)
-            {
-                autocast = true;
-                break;
-            }
-        }
-
-        pet->ToggleAutocast(spellInfo, !autocast);
-        std::ostringstream out;
-        out << (autocast ? "|cffff0000|Disabling" : "|cFF00ff00|Enabling") << " pet auto-cast for ";
-        out << chatHelper.FormatSpell(spellInfo);
-        TellMaster(out);
-        return true;
-    }
+        return CommandPetCastSpell(spellId, x, y, z);
 
     // aiObjectContext->GetValue<LastMovement&>("last movement")->Get().Set(nullptr);
     // aiObjectContext->GetValue<time_t>("stay time")->Set(0);

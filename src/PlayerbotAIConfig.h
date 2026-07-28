@@ -354,6 +354,9 @@ public:
     // DEC-025 per-class deploy paths (empty ⇒ fall back to mlModelPathDuel).
     std::string mlModelPathDuelWarrior;
     std::string mlModelPathDuelMage;
+    // DEC-026 S2 DAgger teacher: S1 scalar PBMLs while learner paths hold multi-logit (or empty bootstrap).
+    std::string mlModelPathDuelTeacherWarrior;
+    std::string mlModelPathDuelTeacherMage;
 
     bool mlDuelBracketEnabled;
     std::string mlDuelBracketPairs;

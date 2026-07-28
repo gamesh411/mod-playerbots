@@ -113,24 +113,30 @@ def main():
     ap.add_argument("--csv", type=Path, required=True)
     ap.add_argument("--label", type=str, default="eval")
     ap.add_argument("--baseline-csv", type=Path, default=None, help="stock↔stock reference CSV")
+    ap.add_argument(
+        "--baseline-csv-s1",
+        type=Path,
+        default=None,
+        help="DEC-026 stacked freeze: S1↔S1 (or S1 farm) reference CSV",
+    )
     ap.add_argument("--delta", type=float, default=0.02, help="WR uplift gate δ (fraction)")
     ap.add_argument(
         "--ranker-seat",
         choices=("warrior", "mage"),
         default=None,
-        help="DEC-025 mixed-seat: gate only this class vs baseline (other seat is Softmax-stock)",
+        help="DEC-025/026 mixed-seat: gate only this class vs baseline(s)",
     )
     args = ap.parse_args()
 
     stats = match_outcomes(args.csv)
     print_stats(args.label, stats)
 
-    if args.baseline_csv:
-        base = match_outcomes(args.baseline_csv)
-        print_stats("baseline (stock-stock)", base)
+    def gate_vs(baseline_path: Path, baseline_label: str) -> bool:
+        base = match_outcomes(baseline_path)
+        print_stats(baseline_label, base)
         seats = (args.ranker_seat,) if args.ranker_seat else ("warrior", "mage")
         mode = "mixed-seat" if args.ranker_seat else "same-policy"
-        print(f"\n=== uplift vs baseline ({mode}; delta={args.delta*100:.0f}pp) ===")
+        print(f"\n=== uplift vs {baseline_label} ({mode}; delta={args.delta*100:.0f}pp) ===")
         both_clear = True
         for name in seats:
             wr = winrate(stats[name])
@@ -146,12 +152,26 @@ def main():
                 f"  {name}: {wr*100:.1f}% vs {bwr*100:.1f}%  d={uplift*100:+.1f}pp  "
                 f"{'PASS' if ok else 'FAIL'} (need >={args.delta*100:.0f}pp)"
             )
+        return both_clear
+
+    stock_ok = True
+    s1_ok = True
+    if args.baseline_csv:
+        stock_ok = gate_vs(args.baseline_csv, "baseline (stock-stock)")
+    if args.baseline_csv_s1:
+        s1_ok = gate_vs(args.baseline_csv_s1, "baseline (S1)")
+
+    if args.baseline_csv or args.baseline_csv_s1:
+        stock_s = "n/a" if not args.baseline_csv else ("PASS" if stock_ok else "FAIL")
+        s1_s = "n/a" if not args.baseline_csv_s1 else ("PASS" if s1_ok else "FAIL")
         if args.ranker_seat:
-            print(f"\nMixed-seat gate ({args.ranker_seat} ranker): {'PASS' if both_clear else 'FAIL'}")
-            print("Need both arms-ranker and frost-ranker CSVs to clear for DEC-025 freeze.")
+            print(f"\nMixed-seat gate ({args.ranker_seat}): stock={stock_s}; S1={s1_s}")
+            if args.baseline_csv and args.baseline_csv_s1:
+                print(f"DEC-026 stacked for this seat: {'PASS' if (stock_ok and s1_ok) else 'FAIL'}")
+            print("Need both arms-ranker and frost-ranker CSVs (each stacked) for full freeze.")
         else:
-            print(f"\nSame-policy gate both seats: {'PASS' if both_clear else 'FAIL'}")
-            print("Note: DEC-025 freeze is mixed seats (ranker vs stock), not ranker-ranker.")
+            print(f"\nSame-policy gate: stock={stock_s}; S1={s1_s}")
+            print("Note: DEC-025/026 freeze uses mixed seats, not ranker-ranker.")
 
 
 if __name__ == "__main__":

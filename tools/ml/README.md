@@ -69,3 +69,24 @@ python eval_duel_winrate.py --csv /path/ml_decisions_duel_mixed_frost_ranker.csv
 When `ActionPolicy=ranker` and no PBML is loaded for a bot's class, that seat uses **Softmax-stock**
 (same path as `ActionPolicy=softmax-stock`, including multiplier filter). Clear one per-class path and
 set `SoftmaxTemperature≤0` for DEC-025 mixed-seat freeze eval.
+
+## S2 spellbook multi-logit (DEC-026)
+
+Runtime: `ActionPolicy=ranker` + `SpellPool=spellbook` + multi-logit PBML (`output_dim>1` + `vocab`).
+Train (after spellbook farm writes spell-id `action` / `expert_action` columns):
+
+```bash
+python train_spellbook_ranker.py --csv /path/to/ml_decisions_duel_s2.csv \
+  --out ../../artifacts/duel/s2/warrior.pbml --self-class warrior --duel-only
+python train_spellbook_ranker.py --csv /path/to/ml_decisions_duel_s2.csv \
+  --out ../../artifacts/duel/s2/mage.pbml --self-class mage --duel-only --imitate-expert
+```
+
+Optional `--vocab-file` freezes the class@80 spell-id list; otherwise vocab is built from CSV ids.
+
+Stacked freeze eval (DEC-026):
+
+```bash
+python eval_duel_winrate.py --csv /path/ml_decisions_duel_mixed_s2_arms.csv --ranker-seat warrior \
+  --baseline-csv /path/ml_decisions_duel_v3.csv --baseline-csv-s1 /path/ml_decisions_duel_v4.csv --delta 0.02
+```
