@@ -518,6 +518,11 @@ public:
                   int checkStack = -1);
     bool CastSpell(uint32 spellId, Unit* target, Item* itemTarget = nullptr);
     bool CastSpell(uint32 spellId, float x, float y, float z, Item* itemTarget = nullptr);
+    // Commanded pet cast (not autocast toggle). Sets dest at target for ground AoE (e.g. Freeze 33395).
+    bool CanCastPetSpell(uint32 spellId, Unit* target);
+    bool CanCastPetSpell(uint32 spellId, float x, float y, float z);
+    bool CommandPetCastSpell(uint32 spellId, Unit* target);
+    bool CommandPetCastSpell(uint32 spellId, float x, float y, float z);
     bool canDispel(SpellInfo const* spellInfo, uint32 dispelType);
 
     bool CanCastVehicleSpell(uint32 spellid, Unit* target);

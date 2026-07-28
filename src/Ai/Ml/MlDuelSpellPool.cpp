@@ -6,8 +6,9 @@
 
 #include <algorithm>
 #include <cctype>
-#include <unordered_map>
+#include <string>
 
+#include "Pet.h"
 #include "Player.h"
 #include "PlayerbotAI.h"
 #include "Playerbots.h"
@@ -30,7 +31,6 @@ bool IsNoiseSpell(SpellInfo const* info)
     std::string const name = info->SpellName[0] ? info->SpellName[0] : "";
     std::string const n = ToLower(name);
 
-    // Same spirit as ListSpellsAction ignore list + travel/profession noise.
     static char const* kNoise[] = {
         "opening", "closing", "stuck", "remove insignia", "grovel", "duel", "honorless target",
         "riding", "apprentice riding", "journeyman riding", "expert riding", "artisan riding",
@@ -69,11 +69,45 @@ bool IsNoiseSpell(SpellInfo const* info)
         }
     }
 
-    // Profession crafts: create-item + reagents.
     if (info->Effects[EFFECT_0].Effect == SPELL_EFFECT_CREATE_ITEM && info->ReagentCount[EFFECT_0] > 0)
         return true;
 
     return false;
+}
+
+void TryAddCandidate(std::vector<MlDuelSpellCandidate>& out, PlayerbotAI* botAI, uint32 spellId, Unit* duelOpponent,
+                     bool petSpell)
+{
+    SpellInfo const* info = sSpellMgr->GetSpellInfo(spellId);
+    if (!info || info->IsPassive() || IsNoiseSpell(info))
+        return;
+
+    Unit* castTarget = nullptr;
+    if (petSpell)
+    {
+        if (botAI->CanCastPetSpell(spellId, duelOpponent))
+            castTarget = duelOpponent;
+        else if (botAI->CanCastPetSpell(spellId, botAI->GetBot()))
+            castTarget = botAI->GetBot();
+        else
+            return;
+    }
+    else
+    {
+        if (botAI->CanCastSpell(spellId, duelOpponent, true))
+            castTarget = duelOpponent;
+        else if (botAI->CanCastSpell(spellId, botAI->GetBot(), true))
+            castTarget = botAI->GetBot();
+        else
+            return;
+    }
+
+    MlDuelSpellCandidate cand;
+    cand.spellId = spellId;
+    cand.actionName = std::to_string(spellId);
+    cand.castTarget = castTarget;
+    cand.petSpell = petSpell;
+    out.push_back(std::move(cand));
 }
 }  // namespace
 
@@ -87,9 +121,6 @@ std::vector<MlDuelSpellCandidate> MlDuelSpellPool::Collect(PlayerbotAI* botAI, U
     if (!bot || !bot->IsAlive())
         return out;
 
-    // Keep highest rank per lowercase name.
-    std::unordered_map<std::string, MlDuelSpellCandidate> best;
-
     for (PlayerSpellMap::const_iterator itr = bot->GetSpellMap().begin(); itr != bot->GetSpellMap().end(); ++itr)
     {
         if (itr->second->State == PLAYERSPELL_REMOVED || !itr->second->Active)
@@ -97,36 +128,21 @@ std::vector<MlDuelSpellCandidate> MlDuelSpellPool::Collect(PlayerbotAI* botAI, U
         if (!(itr->second->specMask & bot->GetActiveSpecMask()))
             continue;
 
-        uint32 spellId = itr->first;
-        SpellInfo const* info = sSpellMgr->GetSpellInfo(spellId);
-        if (!info || info->IsPassive() || IsNoiseSpell(info))
-            continue;
-
-        std::string actionName = ToLower(info->SpellName[0] ? info->SpellName[0] : "");
-        if (actionName.empty())
-            continue;
-
-        Unit* castTarget = nullptr;
-        if (botAI->CanCastSpell(spellId, duelOpponent, true))
-            castTarget = duelOpponent;
-        else if (botAI->CanCastSpell(spellId, bot, true))
-            castTarget = bot;
-        else
-            continue;
-
-        MlDuelSpellCandidate cand;
-        cand.spellId = spellId;
-        cand.actionName = std::move(actionName);
-        cand.castTarget = castTarget;
-
-        auto it = best.find(cand.actionName);
-        if (it == best.end() || spellId > it->second.spellId)
-            best[cand.actionName] = cand;
+        TryAddCandidate(out, botAI, itr->first, duelOpponent, false);
     }
 
-    out.reserve(best.size());
-    for (auto& kv : best)
-        out.push_back(std::move(kv.second));
+    if (Pet* pet = bot->GetPet())
+    {
+        if (pet->IsAlive())
+        {
+            for (PetSpellMap::const_iterator itr = pet->m_spells.begin(); itr != pet->m_spells.end(); ++itr)
+            {
+                if (itr->second.state == PETSPELL_REMOVED)
+                    continue;
+                TryAddCandidate(out, botAI, itr->first, duelOpponent, true);
+            }
+        }
+    }
 
     return out;
 }
@@ -135,5 +151,9 @@ bool MlDuelSpellPool::Execute(PlayerbotAI* botAI, MlDuelSpellCandidate const& pi
 {
     if (!botAI || !pick.spellId || !pick.castTarget)
         return false;
+
+    if (pick.petSpell)
+        return botAI->CommandPetCastSpell(pick.spellId, pick.castTarget);
+
     return botAI->CastSpell(pick.spellId, pick.castTarget);
 }

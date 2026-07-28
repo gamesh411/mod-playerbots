@@ -23,6 +23,8 @@
 #include "Playerbots.h"
 #include "Random.h"
 #include "SpellDefines.h"
+#include "SpellInfo.h"
+#include "SpellMgr.h"
 #include "Timer.h"
 #include "WorldSession.h"
 
@@ -122,6 +124,18 @@ void MlDuelBracket::LoadFromConfig()
                  pairs.size(), allowedClassMask, resetCooldownsOnDuelEnd ? 1 : 0, alliancePark.mapId, alliancePark.x,
                  alliancePark.y, hordePark.mapId, hordePark.x, hordePark.y);
         ApplySpecProbOverrides();
+
+        // DEC-027: dump Water Elemental Freeze targeting so S2 execute can claim pet-root combos.
+        if (SpellInfo const* freeze = sSpellMgr->GetSpellInfo(33395))
+        {
+            LOG_INFO("playerbots",
+                     "DEC-027 Freeze 33395 Targets=0x{:X} Explicit=0x{:X} Effect0A={} Effect0B={} NeedsUnit={}",
+                     freeze->Targets, freeze->GetExplicitTargetMask(),
+                     freeze->Effects[EFFECT_0].TargetA.GetTarget(), freeze->Effects[EFFECT_0].TargetB.GetTarget(),
+                     freeze->NeedsExplicitUnitTarget() ? 1 : 0);
+        }
+        else
+            LOG_ERROR("playerbots", "DEC-027 Freeze 33395 missing from SpellMgr");
     }
 }
 
