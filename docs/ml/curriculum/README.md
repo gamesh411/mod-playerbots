@@ -10,13 +10,15 @@ Showcase learning on **Arms vs Frost** duels. Each stage freezes policy + conf +
 
 **DEC-018** locks this ladder and supersedes DEC-013 / DEC-014 as showcase defaults.
 
+Hands-on feel-test while farming: [sparring-partners.md](sparring-partners.md) (addclass Arms + Frost at a quiet pad).
+
 ### Status
 
 | Stage | Implementation ticket | Freeze status |
 |-------|----------------------|---------------|
 | S0 | [#9](https://github.com/gamesh411/mod-playerbots/issues/9) | not frozen |
-| S1 | [#10](https://github.com/gamesh411/mod-playerbots/issues/10) | not frozen |
-| S2 | [#11](https://github.com/gamesh411/mod-playerbots/issues/11) (design); execute follow-on | design locked — not frozen |
+| S1 | [#10](https://github.com/gamesh411/mod-playerbots/issues/10) / execute [#18](https://github.com/gamesh411/mod-playerbots/issues/18) | **soft-fail** (**DEC-028**) — no freeze tag; pivot to S2 |
+| S2 | [#11](https://github.com/gamesh411/mod-playerbots/issues/11) (design); execute [#19](https://github.com/gamesh411/mod-playerbots/issues/19) | design locked — execute next |
 
 ### Out of scope (this curriculum)
 

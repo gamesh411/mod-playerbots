@@ -329,8 +329,15 @@ bool Engine::DoNextAction(Unit* /*unit*/, uint32 /*depth*/, bool minimal)
 
             if (!support.empty())
             {
-                ActionBasket* selected =
-                    SelectSoftmaxBasket(support, sPlayerbotAIConfig.mlDuelBracketSoftmaxTemperature);
+                // Hands-on sparring vs a real player: argmax (tau=0). Farm bot-vs-bot keeps conf tau.
+                float softmaxTau = sPlayerbotAIConfig.mlDuelBracketSoftmaxTemperature;
+                if (Player* foe = self->duel->Opponent->ToPlayer())
+                {
+                    PlayerbotAI* foeAI = GET_PLAYERBOT_AI(foe);
+                    if (!foeAI || foeAI->IsRealPlayer())
+                        softmaxTau = 0.0f;
+                }
+                ActionBasket* selected = SelectSoftmaxBasket(support, softmaxTau);
                 if (selected)
                 {
                     basket = selected;

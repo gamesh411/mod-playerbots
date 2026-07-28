@@ -303,3 +303,22 @@ Health remains **100%** for both participants (DEC-023). Major ability CDs stay 
 
 **Consequences:** [#18](https://github.com/gamesh411/mod-playerbots/issues/18) stays open until Arms clears or an explicit S1-freeze waiver. S2 execute must list ground-target / Water Elemental Nova as a readiness check. Update stage card `s1-scripted-vocab-ranker.md` status to reflect asymmetric PASS/FAIL.
 
+
+### DEC-028 - 2026-07-28 - S1 soft-fail waiver; pivot to S2 execute
+**Status:** accepted  
+**Context:** [#18](https://github.com/gamesh411/mod-playerbots/issues/18) final Arms-focused DAgger after ~2x `duel_v4` growth (~253 MB, ~1.08M rows). User call: one more retrain+eval, then pivot if gate still fails (DEC-027).
+
+**Decision:**
+
+| Piece | Rule |
+|-------|------|
+| Round-3 train | Aggregate v3+v4; per-class `--imitate-expert` then expert-off; `--max-rows 400000`, 30 epochs; `input_dim=82`. |
+| Round-3 mixed gate (d=0.02, ~2.4k matches/seat) | **Arms-ranker FAIL** - warrior **68.9%** vs stock 74.6% (**-5.7pp**). **Frost-ranker FAIL** - mage **14.2%** vs stock 25.8% (**-11.6pp**). Both seats worse than round-2. |
+| S1 freeze | **Soft-fail waiver** - do **not** cut DEC-019 freeze tag / `duel-s1` packaging. DEC-025 both-seat gate remains unmet. |
+| Canonical S1 artifacts | Keep **round-2** PBMLs as `artifacts/duel/s1/warrior.pbml` / `mage.pbml` (frost PASS history). Archive round-3 as `*.round3-fail-20260728.pbml`. |
+| Pivot | Close [#18](https://github.com/gamesh411/mod-playerbots/issues/18); proceed to S2 execute ([#19](https://github.com/gamesh411/mod-playerbots/issues/19) / DEC-026). No further S1 expert-off thrash on queue vocab. |
+| Caveats carried | DEC-027 pet ground-target Nova readiness still required before S2 claims that combo. |
+
+**Why:** Extra on-policy data + another DAgger/expert-off round did not clear Arms and regressed Frost. Matches DEC-027 judgment that scripted-queue scalar ranking has hit its ceiling for this matchup; spell-id S2 is the next lever.
+
+**Consequences:** Stage card / artifacts README record soft-fail; map Decisions-so-far gets this pointer; S2 unblocked.

@@ -9,8 +9,8 @@
 | Stage | Policy | Action vocabulary | Stage card | Status |
 |-------|--------|-------------------|------------|--------|
 | **S0** | Softmax(τ) over **stock** scripted combat relevance | Engine strategy **queue** | [s0-softmax-stock.md](curriculum/s0-softmax-stock.md) | **DEC-022** / [#9](https://github.com/gamesh411/mod-playerbots/issues/9); Engine [#15](https://github.com/gamesh411/mod-playerbots/issues/15) |
-| **S1** | Learned **scalar ranker** (Softmax/argmax over `ScoreDuel`) | Same scripted **queue** | [s1-scripted-vocab-ranker.md](curriculum/s1-scripted-vocab-ranker.md) | **DEC-025** / [#10](https://github.com/gamesh411/mod-playerbots/issues/10); execute follow-on |
-| **S2** | Learned **multi-logit** ranker (spell-id vocab, all ranks) | Full legal **spellbook** | [s2-spellbook-ranker.md](curriculum/s2-spellbook-ranker.md) | **DEC-026** / [#11](https://github.com/gamesh411/mod-playerbots/issues/11); execute follow-on |
+| **S1** | Learned **scalar ranker** (Softmax/argmax over `ScoreDuel`) | Same scripted **queue** | [s1-scripted-vocab-ranker.md](curriculum/s1-scripted-vocab-ranker.md) | **DEC-025** / soft-fail **DEC-028** / [#18](https://github.com/gamesh411/mod-playerbots/issues/18) closed |
+| **S2** | Learned **multi-logit** ranker (spell-id vocab, all ranks) | Full legal **spellbook** | [s2-spellbook-ranker.md](curriculum/s2-spellbook-ranker.md) | **DEC-026** / [#11](https://github.com/gamesh411/mod-playerbots/issues/11); execute [#19](https://github.com/gamesh411/mod-playerbots/issues/19) |
 
 Roadmap detail: [curriculum/README.md](curriculum/README.md).  
 Stage freeze contract (artifacts / conf / tags / cards): [#8](https://github.com/gamesh411/mod-playerbots/issues/8).
@@ -22,10 +22,12 @@ Stage freeze contract (artifacts / conf / tags / cards): [#8](https://github.com
 | Doc | Role |
 |------|------|
 | [curriculum/](curriculum/) | Stage roadmap + cards |
+| [curriculum/sparring-partners.md](curriculum/sparring-partners.md) | Hands-on addclass Arms/Frost sparring (τ=0, no CSV pollution) |
 | [DECISIONS.md](DECISIONS.md) | Append-only design log (**DEC-018** = curriculum) |
 | [FEATURES.md](FEATURES.md) | Feature packs (70-D state + action flags) |
 | [../../tools/ml/README.md](../../tools/ml/README.md) | Train / analyze commands |
 | [research/s1-training-lessons-learned.md](research/s1-training-lessons-learned.md) | S1 execute (#18): novel failure modes / debugging intuition |
+| [research/handoff-2026-07-28-s1-softfail-s2.md](research/handoff-2026-07-28-s1-softfail-s2.md) | Session handoff: S1 soft-fail (DEC-028) → S2 execute (#19) |
 
 ## Archive
 

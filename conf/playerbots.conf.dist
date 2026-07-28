@@ -2214,8 +2214,10 @@ AiPlayerbot.MlDuelBracket.ActionPolicy = "softmax-stock"
 # queue | spellbook | union. Spellbook/union apply only to ActionPolicy=random.
 AiPlayerbot.MlDuelBracket.SpellPool = "queue"
 # Softmax temperature for softmax-stock and ranker. Farm default 10; ≤0 ⇒ argmax (demo/freeze).
+# Sparring vs a real player always uses argmax (tau=0) regardless of this value; farm bot-vs-bot keeps it.
 AiPlayerbot.MlDuelBracket.SoftmaxTemperature = 10.0
 # Alliance: Elwynn map 34.00, 51.00 (outside SW gates). Horde: Durotar map 45.83, 13.90.
+# Hands-on sparring pads (addclass bots; away from farm parks): see docs/ml/curriculum/sparring-partners.md
 AiPlayerbot.MlDuelBracket.ParkAlliance = "0,-9120,355,93.2,0.7"
 AiPlayerbot.MlDuelBracket.ParkHorde = "1,1318.4,-4385.8,26.5,3.5"
 # 0 derives the class mask from Pairs.
