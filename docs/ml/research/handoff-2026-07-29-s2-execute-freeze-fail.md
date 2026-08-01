@@ -107,3 +107,15 @@ Gap closers ARE in the frozen vocab (Charge 11578, Intercept 20252, Hamstring 17
 
 Frost smoke on the dec030 stack ran separately (see ticket for numbers).
 Archives this session: `ml_decisions_duel_mixed_arms_ranker.dec029-smoke-20260801.csv`, `...dec030-smoke-20260801.csv`, heads `warrior.dec029.pbml` / `warrior.dec030b.pbml` (experiment records, untracked).
+
+### Smoke numbers on the DEC-029/030 stack (2026-08-01, formal, tau=0, delta=0.02)
+
+| Seat | WR | vs stock (74.6/25.8) | vs S1 (70.7/29.9) | Stacked |
+|------|-----:|---------:|---------:|------|
+| Arms (S2 W vs stock M) | **1.9%** (~2.3k matches) | -72.7pp FAIL | -68.8pp FAIL | **FAIL** |
+| Frost (S2 M vs stock W) | **15.6%** (~2.4k matches) | -10.3pp FAIL | -14.3pp FAIL | **FAIL** |
+
+Frost is qualitatively fixed - real rotation (Frostfire Bolt / Frost Nova / Counterspell / Frostbolt / Icy Veins / Deep Freeze / Ice Block / Cold Snap), up from 0.1% - but still below both baselines.
+Arms remains mechanically able (melee lands) yet strategically stuck in Cleave spam; see the teacher-projection block above.
+Smoke CSVs: `ml_decisions_duel_mixed_{arms,frost}_ranker.dec030-smoke-20260801.csv`.
+Farm stopped; canonical PBMLs are the dec030 heads.
