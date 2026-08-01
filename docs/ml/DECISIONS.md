@@ -322,3 +322,22 @@ Health remains **100%** for both participants (DEC-023). Major ability CDs stay 
 **Why:** Extra on-policy data + another DAgger/expert-off round did not clear Arms and regressed Frost. Matches DEC-027 judgment that scripted-queue scalar ranking has hit its ceiling for this matchup; spell-id S2 is the next lever.
 
 **Consequences:** Stage card / artifacts README record soft-fail; map Decisions-so-far gets this pointer; S2 unblocked.
+
+### DEC-029 - 2026-08-01 - S2 retrain scheme: win-anchored self-imitation + balanced CE
+**Status:** accepted  
+**Context:** [#19](https://github.com/gamesh411/mod-playerbots/issues/19) S2 freeze-fail diagnosis (`356c191b` / `0cb22754`): expert-off aggregate CE behavior-cloned tau=10 exploration junk with no reward signal and collapsed onto the marginal majority action (arms ~pure Cleave r8 / offline argmax 66.6% Auto Attack; frost 87.2% Auto Attack; WR 0% vs honest stock). A pure DAgger round caps at the S1 teacher, which itself soft-failed on Arms (DEC-028), so it cannot clear the stacked "beat S1+delta" gate.
+
+**Decision:**
+
+| Piece | Rule |
+|-------|------|
+| Label scheme | `--label-scheme win-else-expert`: CE target = own logged action on **won** episodes (win = last `terminal>0` per match/bot, eval convention), else S1 `expert_action`, else drop the row. Reward pressure beyond the teacher + rotation sanity from it. |
+| Class balance | `--balance-labels sqrt`: CE row weight ~ 1/sqrt(label frequency). Counters marginal-mode argmax collapse onto always-legal actions (Auto Attack 6603). |
+| Capacity | hidden 128, 60 epochs over full s2+r2+r3+eo aggregate (~1.7M rows; 796k kept warrior / 664k mage), frozen vocab 49W/220M. No weight warm-start (DEC-026). |
+| Offline degeneracy gate | Before any deploy: argmax distribution over ~20k sampled real states must show a spread kit, not a single dominant junk action. Checker also reports expert-agreement. |
+| Measured (offline) | Warrior: 29 distinct argmax, Auto 33.7%, Cleave 13.5%, HS 12.5%, MS/Sweeping present. Mage: 38 distinct, Auto 30.8%, Frost Nova 16.4%, Counterspell 12.2%, Frostbolt 9.1%, Ice Block 7.1%. Unbalanced variant stayed collapsed (80%/67% Auto) - balance is load-bearing. |
+| Order of operations | Short mixed smoke per seat (honest Softmax-stock opponent, fresh CSV) before any full gate run; no `stage/s2` cut on smoke numbers. |
+
+**Why:** Labels in the data are healthy (expert warrior Auto only 14.8%, spread kit) but a 70-D MLP underfits the state-conditional and plain CE degenerates to predicting the marginal everywhere; at tau=0 the always-legal majority action wins argmax in every state. Win-filtering alone keeps the same marginal (winners of junk-vs-junk still spam junk). Frequency balancing changes which action wins argmax per state, which is exactly the tau=0 deploy behavior.
+
+**Consequences:** `train_spellbook_ranker.py` gains `--label-scheme` / `--balance-labels`; retrained heads replace `artifacts/duel/s2/{warrior,mage}.pbml` (prior expert-off heads kept as `*.pre-dec029-20260801-*.pbml`). Smoke + gate numbers land on #19. If seats still fail badly, next lever is another on-policy DAgger farm round with the balanced trainer, not more offline thrash on the same data.

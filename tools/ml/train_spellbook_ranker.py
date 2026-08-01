@@ -46,10 +46,11 @@ def load_spellbook_rows(
     drop_duel_noise: bool,
     max_rows: int,
 ):
-    """Return (X[n,70], action_ids[n], expert_ids[n] or -1)."""
+    """Return (X[n,70], action_ids[n], expert_ids[n] or -1, won[n])."""
     xs: list[list[float]] = []
     actions: list[int] = []
     experts: list[int] = []
+    wons: list[bool] = []
     class_idx = SELF_CLASS_F.get((self_class or "").lower())
 
     for path in paths:
@@ -78,6 +79,17 @@ def load_spellbook_rows(
                     for i in range(FEATURE_DIM):
                         d[f"f{i}"] = cols[feat_start + i]
                     rows.append(d)
+
+            # Per-bot episode outcome: last terminal!=0 row per (match_id, bot_guid),
+            # same convention as eval_duel_winrate.py.
+            outcome: dict[tuple[str, str], float] = {}
+            for row in rows:
+                try:
+                    term = float(row.get("terminal", "0") or 0)
+                except ValueError:
+                    continue
+                if term != 0.0:
+                    outcome[(row.get("match_id", ""), row.get("bot_guid", ""))] = term
 
             for row in rows:
                 if row.get("in_duel", "1") not in ("1", "1.0", "true", "True"):
@@ -113,6 +125,7 @@ def load_spellbook_rows(
                 xs.append(feats)
                 actions.append(int(action))
                 experts.append(expert_id)
+                wons.append(outcome.get((row.get("match_id", ""), row.get("bot_guid", "")), 0.0) > 0.0)
                 if max_rows and len(xs) >= max_rows:
                     break
             if max_rows and len(xs) >= max_rows:
@@ -120,7 +133,12 @@ def load_spellbook_rows(
 
     if not xs:
         raise SystemExit("No spell-id duel rows kept (need ActionPolicy=ranker SpellPool=spellbook logs)")
-    return np.asarray(xs, dtype=np.float32), np.asarray(actions, dtype=np.int64), np.asarray(experts, dtype=np.int64)
+    return (
+        np.asarray(xs, dtype=np.float32),
+        np.asarray(actions, dtype=np.int64),
+        np.asarray(experts, dtype=np.int64),
+        np.asarray(wons, dtype=bool),
+    )
 
 
 def build_vocab(action_ids: np.ndarray, expert_ids: np.ndarray) -> list[int]:
@@ -140,6 +158,7 @@ def train_ce(
     lr: float,
     seed: int,
     hidden: int,
+    sample_w: np.ndarray | None = None,
 ):
     rng = np.random.default_rng(seed)
     n, d = X.shape
@@ -158,6 +177,7 @@ def train_ce(
             bi = idx[start : start + batch]
             xb = X[bi]
             yb = y_idx[bi]
+            wb = sample_w[bi] if sample_w is not None else None
             h_pre = xb @ w1.T + b1
             h = np.maximum(h_pre, 0.0)
             logits = h @ w2.T + b2
@@ -167,12 +187,18 @@ def train_ce(
             probs = exp / np.sum(exp, axis=1, keepdims=True)
             # CE loss
             rows = np.arange(len(bi))
-            loss = -np.mean(np.log(np.clip(probs[rows, yb], 1e-8, 1.0)))
-            total_loss += float(loss)
+            nll = -np.log(np.clip(probs[rows, yb], 1e-8, 1.0))
+            if wb is not None:
+                loss = float(np.sum(nll * wb) / np.sum(wb))
+            else:
+                loss = float(np.mean(nll))
+            total_loss += loss
             n_batches += 1
 
             dlogits = probs
             dlogits[rows, yb] -= 1.0
+            if wb is not None:
+                dlogits *= (wb / np.mean(wb))[:, None]
             dlogits /= len(bi)
 
             dw2 = dlogits.T @ h
@@ -223,6 +249,14 @@ def main():
     ap.add_argument("--max-rows", type=int, default=0)
     ap.add_argument("--imitate-expert", action="store_true",
                     help="train CE on expert_action when present, else on logged action")
+    ap.add_argument("--balance-labels", choices=["none", "sqrt", "inv"], default="none",
+                    help="weight CE rows by inverse label frequency (sqrt = 1/sqrt(freq)); "
+                         "counters marginal-mode argmax collapse onto always-legal actions")
+    ap.add_argument("--label-scheme", choices=["action", "expert", "win-else-expert"], default=None,
+                    help="CE target: 'action' = logged action (behavior cloning); "
+                         "'expert' = expert_action fallback logged action (same as --imitate-expert); "
+                         "'win-else-expert' = logged action on WON episodes, else expert_action, "
+                         "else drop the row (DEC-029 win-anchored self-imitation)")
     ap.add_argument("--epochs", type=int, default=40)
     ap.add_argument("--lr", type=float, default=1e-2)
     ap.add_argument("--hidden", type=int, default=64)
@@ -233,7 +267,9 @@ def main():
     if args.self_class.lower() not in SELF_CLASS_F:
         raise SystemExit(f"--self-class must be one of {sorted(SELF_CLASS_F)}")
 
-    X, action_ids, expert_ids = load_spellbook_rows(
+    scheme = args.label_scheme or ("expert" if args.imitate_expert else "action")
+
+    X, action_ids, expert_ids, won = load_spellbook_rows(
         args.csv,
         self_class=args.self_class,
         drop_meta=not args.keep_meta,
@@ -251,8 +287,20 @@ def main():
 
     targets = []
     keep = []
+    n_win_self = 0
     for i, aid in enumerate(action_ids.tolist()):
-        label = expert_ids[i] if args.imitate_expert and expert_ids[i] > 0 else aid
+        if scheme == "expert":
+            label = expert_ids[i] if expert_ids[i] > 0 else aid
+        elif scheme == "win-else-expert":
+            if won[i] and aid in index:
+                label = aid
+                n_win_self += 1
+            elif expert_ids[i] > 0:
+                label = int(expert_ids[i])
+            else:
+                continue
+        else:
+            label = aid
         if label not in index:
             continue
         targets.append(index[label])
@@ -261,10 +309,19 @@ def main():
         raise SystemExit("No rows mapped into vocab")
     X = X[np.asarray(keep)]
     y = np.asarray(targets, dtype=np.int64)
-    print(f"rows={len(y)} vocab={len(vocab)} imitate_expert={args.imitate_expert}")
+    print(f"rows={len(y)} vocab={len(vocab)} scheme={scheme} win_self_rows={n_win_self} "
+          f"won_frac={float(won.mean()):.3f} balance={args.balance_labels}")
+
+    sample_w = None
+    if args.balance_labels != "none":
+        counts = np.bincount(y, minlength=len(vocab)).astype(np.float64)
+        freq = counts[y] / len(y)
+        sample_w = (1.0 / np.sqrt(freq) if args.balance_labels == "sqrt" else 1.0 / freq)
+        sample_w = (sample_w / sample_w.mean()).astype(np.float32)
 
     w1, b1, w2, b2 = train_ce(
-        X, y, len(vocab), epochs=args.epochs, lr=args.lr, seed=args.seed, hidden=args.hidden
+        X, y, len(vocab), epochs=args.epochs, lr=args.lr, seed=args.seed, hidden=args.hidden,
+        sample_w=sample_w,
     )
     write_pbml_multi(args.out, w1, b1, w2, b2, vocab)
 
