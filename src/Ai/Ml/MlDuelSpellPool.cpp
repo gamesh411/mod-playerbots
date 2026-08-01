@@ -75,11 +75,20 @@ bool IsNoiseSpell(SpellInfo const* info)
     return false;
 }
 
+// DEC-030: auto-attack toggles are not casts - they flip a persistent auto-repeat state, so as
+// head actions they are always-legal degenerate picks that starve real casts. Melee (6603) is
+// maintained by the Engine as engagement scaffolding (like scripted movement); ranged/wand
+// auto-repeat spells carry SPELL_ATTR2_AUTO_REPEAT and are filtered below.
+constexpr uint32 SPELL_MELEE_AUTO_ATTACK = 6603;
+
 void TryAddCandidate(std::vector<MlDuelSpellCandidate>& out, PlayerbotAI* botAI, uint32 spellId, Unit* duelOpponent,
                      bool petSpell)
 {
+    if (spellId == SPELL_MELEE_AUTO_ATTACK)
+        return;
+
     SpellInfo const* info = sSpellMgr->GetSpellInfo(spellId);
-    if (!info || info->IsPassive() || IsNoiseSpell(info))
+    if (!info || info->IsPassive() || info->IsAutoRepeatRangedSpell() || IsNoiseSpell(info))
         return;
 
     Unit* castTarget = nullptr;

@@ -249,6 +249,9 @@ def main():
     ap.add_argument("--max-rows", type=int, default=0)
     ap.add_argument("--imitate-expert", action="store_true",
                     help="train CE on expert_action when present, else on logged action")
+    ap.add_argument("--drop-labels", type=int, nargs="*", default=[],
+                    help="spell ids never used as CE labels (rows resolving to them are dropped); "
+                         "e.g. 6603 once auto-attack became engine scaffolding (DEC-030)")
     ap.add_argument("--balance-labels", choices=["none", "sqrt", "inv"], default="none",
                     help="weight CE rows by inverse label frequency (sqrt = 1/sqrt(freq)); "
                          "counters marginal-mode argmax collapse onto always-legal actions")
@@ -285,6 +288,7 @@ def main():
         raise SystemExit("Empty vocab")
     index = {sid: i for i, sid in enumerate(vocab)}
 
+    drop_labels = set(args.drop_labels)
     targets = []
     keep = []
     n_win_self = 0
@@ -292,7 +296,7 @@ def main():
         if scheme == "expert":
             label = expert_ids[i] if expert_ids[i] > 0 else aid
         elif scheme == "win-else-expert":
-            if won[i] and aid in index:
+            if won[i] and aid in index and aid not in drop_labels:
                 label = aid
                 n_win_self += 1
             elif expert_ids[i] > 0:
@@ -301,7 +305,7 @@ def main():
                 continue
         else:
             label = aid
-        if label not in index:
+        if label in drop_labels or label not in index:
             continue
         targets.append(index[label])
         keep.append(i)
