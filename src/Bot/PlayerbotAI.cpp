@@ -3570,6 +3570,22 @@ bool PlayerbotAI::CastSpell(std::string const name, Unit* target, Item* itemTarg
     return result;
 }
 
+namespace
+{
+// The temporary Water Elemental is a Pet whose PetSpellMap never learns its command spells
+// (Freeze 33395) - the client pet bar casts them from the creature template instead. Accept
+// both sources wherever pet spell knowledge is checked.
+bool GuardianKnowsSpell(Guardian* pet, uint32 spellId)
+{
+    if (pet->HasSpell(spellId))
+        return true;
+    for (uint8 i = 0; i < MAX_CREATURE_SPELLS; ++i)
+        if (pet->m_spells[i] == spellId)
+            return true;
+    return false;
+}
+}  // namespace
+
 bool PlayerbotAI::CanCastPetSpell(uint32 spellId, Unit* target)
 {
     if (!spellId || !bot)
@@ -3578,7 +3594,7 @@ bool PlayerbotAI::CanCastPetSpell(uint32 spellId, Unit* target)
     // GetGuardianPet: the unglyphed Water Elemental is a Guardian with a Unit-high guid, which
     // Player::GetPet refuses - command/legality checks must still see it (DEC-027 Freeze).
     Guardian* pet = bot->GetGuardianPet();
-    if (!pet || !pet->IsAlive() || !pet->HasSpell(spellId))
+    if (!pet || !pet->IsAlive() || !GuardianKnowsSpell(pet, spellId))
         return false;
 
     SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(spellId);
@@ -3645,7 +3661,7 @@ bool PlayerbotAI::CanCastPetSpell(uint32 spellId, float x, float y, float z)
     // GetGuardianPet: the unglyphed Water Elemental is a Guardian with a Unit-high guid, which
     // Player::GetPet refuses - command/legality checks must still see it (DEC-027 Freeze).
     Guardian* pet = bot->GetGuardianPet();
-    if (!pet || !pet->IsAlive() || !pet->HasSpell(spellId))
+    if (!pet || !pet->IsAlive() || !GuardianKnowsSpell(pet, spellId))
         return false;
 
     SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(spellId);
@@ -3695,7 +3711,7 @@ bool PlayerbotAI::CommandPetCastSpell(uint32 spellId, Unit* target)
     // GetGuardianPet: the unglyphed Water Elemental is a Guardian with a Unit-high guid, which
     // Player::GetPet refuses - command/legality checks must still see it (DEC-027 Freeze).
     Guardian* pet = bot->GetGuardianPet();
-    if (!pet || !pet->IsAlive() || !pet->HasSpell(spellId))
+    if (!pet || !pet->IsAlive() || !GuardianKnowsSpell(pet, spellId))
         return false;
 
     SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(spellId);
@@ -3783,7 +3799,7 @@ bool PlayerbotAI::CommandPetCastSpell(uint32 spellId, float x, float y, float z)
     // GetGuardianPet: the unglyphed Water Elemental is a Guardian with a Unit-high guid, which
     // Player::GetPet refuses - command/legality checks must still see it (DEC-027 Freeze).
     Guardian* pet = bot->GetGuardianPet();
-    if (!pet || !pet->IsAlive() || !pet->HasSpell(spellId))
+    if (!pet || !pet->IsAlive() || !GuardianKnowsSpell(pet, spellId))
         return false;
 
     SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(spellId);
