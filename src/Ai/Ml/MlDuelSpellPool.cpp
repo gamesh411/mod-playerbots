@@ -8,12 +8,14 @@
 #include <cctype>
 #include <string>
 
+#include "CharmInfo.h"
 #include "Pet.h"
 #include "Player.h"
 #include "PlayerbotAI.h"
 #include "Playerbots.h"
 #include "SpellInfo.h"
 #include "SpellMgr.h"
+#include "TemporarySummon.h"
 
 namespace
 {
@@ -91,6 +93,13 @@ void TryAddCandidate(std::vector<MlDuelSpellCandidate>& out, PlayerbotAI* botAI,
     if (!info || info->IsPassive() || info->IsAutoRepeatRangedSpell() || IsNoiseSpell(info))
         return;
 
+    // On-next-swing spells (Heroic Strike / Cleave / Maul) queue on the swing timer the way
+    // toggles queue state: re-picking while one is pending never resolves anything and starves
+    // the tick (the Cleave-spam collapse). Mask them all until the queued swing lands or clears.
+    if ((info->HasAttribute(SPELL_ATTR0_ON_NEXT_SWING) || info->HasAttribute(SPELL_ATTR0_ON_NEXT_SWING_NO_DAMAGE)) &&
+        botAI->GetBot()->GetCurrentSpell(CURRENT_MELEE_SPELL))
+        return;
+
     Unit* castTarget = nullptr;
     if (petSpell)
     {
@@ -140,15 +149,43 @@ std::vector<MlDuelSpellCandidate> MlDuelSpellPool::Collect(PlayerbotAI* botAI, U
         TryAddCandidate(out, botAI, itr->first, duelOpponent, false);
     }
 
-    if (Pet* pet = bot->GetPet())
+    // GetGuardianPet, not GetPet: the unglyphed Water Elemental is a Guardian with a Unit-high
+    // guid, which Player::GetPet refuses - via GetPet the pet-root combo (Freeze 33395) was never
+    // even a candidate. Autocast-enabled pet spells (Waterbolt) stay excluded: the pet AI already
+    // repeats them, so as head actions they are toggle-like no-ops (DEC-030 care).
+    if (Guardian* pet = bot->GetGuardianPet())
     {
         if (pet->IsAlive())
         {
-            for (PetSpellMap::const_iterator itr = pet->m_spells.begin(); itr != pet->m_spells.end(); ++itr)
+            if (Pet* asPet = pet->ToPet())
             {
-                if (itr->second.state == PETSPELL_REMOVED)
-                    continue;
-                TryAddCandidate(out, botAI, itr->first, duelOpponent, true);
+                for (PetSpellMap::const_iterator itr = asPet->m_spells.begin(); itr != asPet->m_spells.end(); ++itr)
+                {
+                    if (itr->second.state == PETSPELL_REMOVED || itr->second.active == ACT_ENABLED)
+                        continue;
+                    TryAddCandidate(out, botAI, itr->first, duelOpponent, true);
+                }
+            }
+            else
+            {
+                CharmInfo* charmInfo = pet->GetCharmInfo();
+                for (uint8 i = 0; i < MAX_CREATURE_SPELLS; ++i)
+                {
+                    uint32 const spellId = pet->m_spells[i];
+                    if (!spellId)
+                        continue;
+                    bool autocast = false;
+                    if (charmInfo)
+                        for (uint8 slot = 0; slot < MAX_SPELL_CHARM; ++slot)
+                            if (CharmSpellInfo const* charmSpell = charmInfo->GetCharmSpell(slot))
+                                if (charmSpell->GetAction() == spellId && charmSpell->GetType() == ACT_ENABLED)
+                                {
+                                    autocast = true;
+                                    break;
+                                }
+                    if (!autocast)
+                        TryAddCandidate(out, botAI, spellId, duelOpponent, true);
+                }
             }
         }
     }

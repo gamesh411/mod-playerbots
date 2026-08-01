@@ -255,11 +255,13 @@ def main():
     ap.add_argument("--balance-labels", choices=["none", "sqrt", "inv"], default="none",
                     help="weight CE rows by inverse label frequency (sqrt = 1/sqrt(freq)); "
                          "counters marginal-mode argmax collapse onto always-legal actions")
-    ap.add_argument("--label-scheme", choices=["action", "expert", "win-else-expert"], default=None,
+    ap.add_argument("--label-scheme", choices=["action", "expert", "win-else-expert", "win-only"], default=None,
                     help="CE target: 'action' = logged action (behavior cloning); "
                          "'expert' = expert_action fallback logged action (same as --imitate-expert); "
                          "'win-else-expert' = logged action on WON episodes, else expert_action, "
-                         "else drop the row (DEC-029 win-anchored self-imitation)")
+                         "else drop the row (DEC-029 win-anchored self-imitation); "
+                         "'win-only' = logged action on WON episodes, drop everything else "
+                         "(no expert fallback - for seats whose teacher projection is degenerate)")
     ap.add_argument("--epochs", type=int, default=40)
     ap.add_argument("--lr", type=float, default=1e-2)
     ap.add_argument("--hidden", type=int, default=64)
@@ -303,6 +305,11 @@ def main():
                 label = int(expert_ids[i])
             else:
                 continue
+        elif scheme == "win-only":
+            if not won[i] or aid not in index or aid in drop_labels:
+                continue
+            label = aid
+            n_win_self += 1
         else:
             label = aid
         if label in drop_labels or label not in index:

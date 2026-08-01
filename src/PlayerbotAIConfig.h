@@ -355,6 +355,9 @@ public:
     std::string mlDuelBracketActionPolicy;
     std::string mlDuelBracketSpellPool;
     float mlDuelBracketSoftmaxTemperature;
+    // Stock (queue Softmax-stock) seats only; < 0 follows SoftmaxTemperature. Lets mixed-seat
+    // farms explore on the ranker seat while the stock opponent stays honest argmax.
+    float mlDuelBracketStockSoftmaxTemperature;
     std::string mlDuelBracketParkAlliance;
     std::string mlDuelBracketParkHorde;
     uint32 mlDuelBracketAllowedClassMask;

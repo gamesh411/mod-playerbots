@@ -132,9 +132,13 @@ size_t SelectSoftmaxIndex(std::vector<float> const& logits, float tau)
     return weights.size() - 1;
 }
 
-float DuelSoftmaxTau(Player* self)
+// stockSeat: queue Softmax-stock seats may run a separate temperature so mixed-seat farms can
+// explore on the ranker seat while the stock opponent stays honest argmax.
+float DuelSoftmaxTau(Player* self, bool stockSeat = false)
 {
     float softmaxTau = sPlayerbotAIConfig.mlDuelBracketSoftmaxTemperature;
+    if (stockSeat && sPlayerbotAIConfig.mlDuelBracketStockSoftmaxTemperature >= 0.0f)
+        softmaxTau = sPlayerbotAIConfig.mlDuelBracketStockSoftmaxTemperature;
     if (self && self->duel && self->duel->Opponent)
     {
         if (Player* foe = self->duel->Opponent->ToPlayer())
@@ -302,9 +306,12 @@ bool Engine::DoNextAction(Unit* /*unit*/, uint32 /*depth*/, bool minimal)
     // DEC-026: ranker + spellbook. Multi-logit when loaded; uniform Softmax explore (bootstrap) only
     // while τ>0. At τ=0 uniform logits argmax to candidates[0] (junk spam), so a class without a
     // multi-logit PBML falls through to the queue, where DEC-025 Softmax-stock keeps mixed-seat
-    // "stock" opponents honest.
+    // "stock" opponents honest. StockSoftmaxTemperature >= 0 declares model-less seats stock for
+    // this run: they must never spellbook-explore even while the ranker seat farms at τ>0.
+    bool const stockSeatPinned = sPlayerbotAIConfig.mlDuelBracketStockSoftmaxTemperature >= 0.0f;
     bool const useSpellbookRanker = duelBracketOn && policy == "ranker" && spellPool == "spellbook" && self &&
-                                    (sMlScorer.HasMultiLogitFor(self->getClass()) || DuelSoftmaxTau(self) > 0.0f);
+                                    (sMlScorer.HasMultiLogitFor(self->getClass()) ||
+                                     (!stockSeatPinned && DuelSoftmaxTau(self) > 0.0f));
     if (useSpellbookRanker)
     {
         // DEC-030: melee auto-attack is engagement scaffolding (like scripted movement), not a
@@ -480,7 +487,7 @@ bool Engine::DoNextAction(Unit* /*unit*/, uint32 /*depth*/, bool minimal)
 
             if (!support.empty())
             {
-                ActionBasket* selected = SelectSoftmaxBasket(support, DuelSoftmaxTau(self));
+                ActionBasket* selected = SelectSoftmaxBasket(support, DuelSoftmaxTau(self, useSoftmaxStock));
                 if (selected)
                 {
                     basket = selected;
