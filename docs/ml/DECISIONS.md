@@ -418,3 +418,21 @@ The Arms DAgger teacher projection is degenerate on live chase states (79% Cleav
 **Why:** With the teacher signal broken for Arms, the only trustworthy label source is the policy's own winning behavior, and that needs coverage: exploration around the current head visits the states (gap closers, swing specials that now resolve, pet lines) that win-anchored CE can then reinforce.
 
 **Consequences:** Orchestrator `duel-farm` mixed profile gains the explore/gate split (`config.ps1`); retrain order per class: exploratory mixed farm -> win-anchored retrain -> offline degeneracy gate -> tau=0 smoke (DEC-029 order preserved).
+
+### DEC-034 - 2026-08-01 - Shapeshift-form spells are out of the S2 head until a form feature exists
+**Status:** accepted  
+**Context:** First DEC-033 warrior win-only retrain: offline argmax collapsed onto the three stances (Battle 40.7% / Berserker 32.8% / Defensive 26.5%, distinct=3).
+Stances are always-legal persistent state flips - the DEC-030 toggle family - and the 70-D feature vector has **no form/stance bit**, so the head cannot condition on the state a stance pick changes; stance actions are unlearnable noise that soaks up argmax.
+
+**Decision:**
+
+| Piece | Rule |
+|------|------|
+| Candidate pool | `MlDuelSpellPool` excludes any spell applying `SPELL_AURA_MOD_SHAPESHIFT` (warrior stances, druid forms). Form control stays scripted/default, like movement (DEC-026) and melee auto-attack (DEC-030). |
+| Labels | Warrior retrains add `--drop-labels 2457 2458 71`. |
+| Balance | `--balance-labels inv` for the thin win-only label set (sqrt left Heroic Strike at 99.6% argmax; inv yields 33 distinct with a Charge/Pummel/Mortal Strike/Intercept-led kit). |
+| Revisit | A form/stance feature (with the pet-state feature already in map fog) is the unlock for learned stance dancing; until then Intercept-from-Berserker lines stay unreachable, as they already were. |
+
+**Why:** An action whose precondition and effect are invisible to the features cannot be state-conditionally learned; keeping it in the head only re-creates the DEC-029/030 argmax sink with a different id.
+
+**Consequences:** Worldserver rebuild (pool exclusion); `warrior.dec033b.pbml` (win-only + inv balance) deploys as canonical `warrior.pbml`; offline degeneracy checker gains `--exclude` to mirror runtime masks.
