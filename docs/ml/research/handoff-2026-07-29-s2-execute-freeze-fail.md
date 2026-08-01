@@ -63,6 +63,15 @@ Mixed CSVs (S2 run; S1 mixed archived as `*.s1-archive.csv`):
 
 Proposed order: fix (1) → sample casts (2) → short mixed smoke (~500 matches) → only then full gate.
 
+## Update 2026-08-01 — suspects (1) and (2) confirmed, (1) fixed
+
+Suspect (1) confirmed in code and data: the spellbook block had no model check, so at τ=0 a model-less "stock" seat argmaxed uniform logits into `candidates[0]` junk spam (mages: Frostfire Bolt r1 **44614**; warriors: Battle Stance **2457** / Sunder r1 **7386**).
+Fixed in `356c191b`: spellbook ranker requires `HasMultiLogitFor(class)`; uniform explore only at τ>0 (bootstrap unchanged); model-less seats fall to the DEC-025 queue Softmax-stock fallback.
+Suspect (2) also confirmed: at τ=0 the expert-off arms policy is ~pure Cleave r8 (**47520**, on-next-melee, never lands without auto attack) and frost is ~pure Auto Attack (**6603**).
+Post-fix smoke (863 matches, honest stock mage playing frostbolt/deep freeze/nova kit): arms S2 still **0.0%** — the FAIL is now cleanly the policy, not the instrument.
+Smoke CSV: `ml_decisions_duel_mixed_arms_ranker.smoke-stockfix-20260801.csv`.
+Next: decide the retrain scheme (win-filtered CE vs continued DAgger imitation pressure) before any further farm or gate run.
+
 ## Sparring note
 
 Real-player challenge: pending duel set `player->duel` in `CHALLENGED`; old code treated that as in-duel and starved accept. Fixed in `cdfd75af`. Re-test sparring after that binary is installed.
