@@ -185,18 +185,6 @@ std::vector<MlDuelSpellCandidate> MlDuelSpellPool::Collect(PlayerbotAI* botAI, U
     {
         if (pet->IsAlive())
         {
-            // DEC-032 diagnostics: confirm the elemental's command spells are visible from the
-            // pool. Remove once Freeze (33395) shows up in farm data.
-            static time_t lastPetProbe = 0;
-            time_t const now = time(nullptr);
-            if (now - lastPetProbe > 60)
-            {
-                lastPetProbe = now;
-                LOG_INFO("playerbots", "DEC-032 pet probe owner={} pet={} isPet={} hasFreeze={} canFreeze={}",
-                         bot->GetName(), pet->GetName(), pet->IsPet() ? 1 : 0,
-                         pet->HasSpell(33395) ? 1 : 0,
-                         botAI->CanCastPetSpell(33395, duelOpponent) ? 1 : 0);
-            }
             // Union of PetSpellMap and creature template spells: the temporary Water Elemental is
             // a Pet whose map never learns its command spells (Freeze 33395) - the template is
             // what the client pet bar actually casts from.
