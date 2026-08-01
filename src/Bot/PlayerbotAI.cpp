@@ -3615,6 +3615,19 @@ bool PlayerbotAI::CanCastPetSpell(uint32 spellId, Unit* target)
     SpellCastResult result = spell->CheckPetCast(target);
     delete spell;
 
+    // DEC-032 diagnostics: surface why Freeze is rejected. Remove with the pool probe.
+    if (spellId == 33395)
+    {
+        static time_t lastFreezeProbe = 0;
+        time_t const now = time(nullptr);
+        if (now - lastFreezeProbe > 60)
+        {
+            lastFreezeProbe = now;
+            LOG_INFO("playerbots", "DEC-032 CanCastPetSpell Freeze result={} owner={}", uint32(result),
+                     bot->GetName());
+        }
+    }
+
     switch (result)
     {
         case SPELL_CAST_OK:
