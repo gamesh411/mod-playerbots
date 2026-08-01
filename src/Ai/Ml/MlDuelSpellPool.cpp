@@ -100,6 +100,14 @@ void TryAddCandidate(std::vector<MlDuelSpellCandidate>& out, PlayerbotAI* botAI,
         botAI->GetBot()->GetCurrentSpell(CURRENT_MELEE_SPELL))
         return;
 
+    // DEC-034: shapeshift-form spells (warrior stances, druid forms) are always-legal persistent
+    // state flips, and the feature vector has no form bit - the head cannot condition on them, so
+    // they are an argmax sink (stance collapse). Form control stays scripted until a form feature
+    // lands.
+    for (uint8 i = 0; i < MAX_SPELL_EFFECTS; ++i)
+        if (info->Effects[i].ApplyAuraName == SPELL_AURA_MOD_SHAPESHIFT)
+            return;
+
     Unit* castTarget = nullptr;
     if (petSpell)
     {
@@ -157,6 +165,18 @@ std::vector<MlDuelSpellCandidate> MlDuelSpellPool::Collect(PlayerbotAI* botAI, U
     {
         if (pet->IsAlive())
         {
+            // DEC-032 diagnostics: confirm the elemental's command spells are visible from the
+            // pool. Remove once Freeze (33395) shows up in farm data.
+            static time_t lastPetProbe = 0;
+            time_t const now = time(nullptr);
+            if (now - lastPetProbe > 60)
+            {
+                lastPetProbe = now;
+                LOG_INFO("playerbots", "DEC-032 pet probe owner={} pet={} isPet={} hasFreeze={} canFreeze={}",
+                         bot->GetName(), pet->GetName(), pet->IsPet() ? 1 : 0,
+                         pet->HasSpell(33395) ? 1 : 0,
+                         botAI->CanCastPetSpell(33395, duelOpponent) ? 1 : 0);
+            }
             if (Pet* asPet = pet->ToPet())
             {
                 for (PetSpellMap::const_iterator itr = asPet->m_spells.begin(); itr != asPet->m_spells.end(); ++itr)
