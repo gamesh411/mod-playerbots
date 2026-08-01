@@ -359,3 +359,61 @@ Health remains **100%** for both participants (DEC-023). Major ability CDs stay 
 **Why:** A toggle flips persistent state; ticking it repeatedly is a no-op decision that starves real casts, and its always-legal status makes it the natural argmax sink for an underfit head. Removing toggles from both the action space and the labels makes every head decision a real cast, and scaffolded melee makes on-next-melee specials actually resolve.
 
 **Consequences:** Worldserver rebuild required; heads retrained with toggle labels dropped; smoke rerun per DEC-029 order of operations. Prior smoke CSV archived as `ml_decisions_duel_mixed_arms_ranker.dec029-smoke-20260801.csv`.
+
+### DEC-031 - 2026-08-01 - On-next-swing spells are masked while one is queued
+**Status:** accepted  
+**Context:** [#19](https://github.com/gamesh411/mod-playerbots/issues/19) dec030 smoke: Arms lands melee now but stays in Cleave-r8 spam (69.6% of rows).
+User input: on-next-swing spells (Heroic Strike / Cleave / Maul) are similar to toggle skills and should be handled with the same care - they queue on the swing timer instead of resolving on pick, so re-picking one is a no-op decision.
+
+**Decision:**
+
+| Piece | Rule |
+|------|------|
+| Candidate pool | `MlDuelSpellPool` masks every `SPELL_ATTR0_ON_NEXT_SWING` / `SPELL_ATTR0_ON_NEXT_SWING_NO_DAMAGE` spell while `CURRENT_MELEE_SPELL` is pending: pick once, then the slot stays masked until the queued swing lands or clears. |
+| Head membership | Unlike DEC-030 toggles they stay head actions - queueing a swing special is a real rage/positioning decision; only the redundant re-pick is removed. |
+| Labels | No `--drop-labels` change; masking fixes future data at the source. |
+
+**Why:** While a swing special is queued, every further pick of it is dead - the collapse sink DEC-030 removed for toggles, reproduced one level up.
+Masking at legality level removes the degenerate action from both live play and freshly farmed data without losing the genuine decision.
+
+**Consequences:** Worldserver rebuild; existing CSVs still carry spam rows (win-anchored labeling + balancing cope); fresh farms are clean.
+
+### DEC-032 - 2026-08-01 - Pet paths resolve the guardian Water Elemental (Freeze claimable)
+**Status:** accepted  
+**Context:** User observation on #19: the frozen-tau sparring mage never uses the Water Elemental, and its Freeze may never be used at all.
+Measured: Freeze 33395 appears **zero** times across ~800k mage rows including tau>0 exploration where Summon 31687 was cast 600+ times.
+Root cause: without Glyph of Eternal Water the elemental is summoned as a **Guardian with a Unit-high guid** (`SummonGuardian` -> `Map::SummonCreature` -> `GenerateLowGuid<HighGuid::Unit>`), and `Player::GetPet()` rejects non-Pet guids - so `CanCastPetSpell` / `CommandPetCastSpell` / the spellbook pet loop never saw the pet, and 33395 never entered the data or the vocab (DEC-027's command-cast path was dead code in practice).
+
+**Decision:**
+
+| Piece | Rule |
+|------|------|
+| Resolution | All playerbots pet-cast paths resolve the pet via `Unit::GetGuardianPet()` (covers both the unglyphed Guardian and the glyphed real Pet); spell knowledge via virtual `HasSpell`. |
+| Candidate pool | Guardian branch iterates `Creature::m_spells` (creature_template_spell: Waterbolt 31707, Freeze 33395). |
+| Autocast exclusion | Pet spells currently autocast-enabled (Waterbolt via the core summon script) are excluded from the head - the pet AI already repeats them, so commanding them is a toggle-like no-op (DEC-030 care). Freeze is not autocast and stays a command decision. |
+| Vocab | 33395 enters the mage vocab at the next data-derived vocab rebuild (DEC-026 allows it: no warm start). |
+| Features | No pet-state feature is added yet; summon/Freeze timing is only partially encoded via cooldown legality. Flagged as fog on the map. |
+
+**Why:** The pet-root combo (Frost Nova / Freeze into Deep Freeze or shatter) is a core Frost duel line the S2 head could never express; the summon itself was legal but its payoff was unreachable, so no training scheme could value it.
+
+**Consequences:** Worldserver rebuild; mage vocab grows on next retrain; summon usage at tau=0 remains a policy-quality question for win-anchored training (stock queue seats do summon via the `no pet` trigger).
+
+### DEC-033 - 2026-08-01 - Exploration-first mixed farm with win-anchored retrain
+**Status:** accepted  
+**Context:** User directive on #19: lean much more heavily on exploration and win-anchored training.
+The Arms DAgger teacher projection is degenerate on live chase states (79% Cleave r8 expert labels), so imitation pressure cannot beat stock; dec030 smoke: Arms 1.9% / Frost 15.6%, both stacked FAIL.
+
+**Decision:**
+
+| Piece | Rule |
+|------|------|
+| Ranker-seat exploration | Mixed farms run the ranker seat at `SoftmaxTemperature` tau=2.5 (policy-shaped exploration around the current head), logging to fresh `ml_decisions_duel_s2_expl_{arms,frost}.csv`. |
+| Honest stock seat | New `AiPlayerbot.MlDuelBracket.StockSoftmaxTemperature` (default -1 = follow SoftmaxTemperature) pins queue Softmax-stock seats to tau=0 during exploration. While >= 0 the Engine also refuses spellbook-explore for model-less classes, so a mixed "stock" seat can never fall into uniform spellbook junk again. |
+| Warrior labels | `--label-scheme win-only` (new): own action on won episodes, everything else dropped - no fallback to the degenerate teacher. |
+| Mage labels | Stays `win-else-expert` (its teacher projection is not range-starved). |
+| Balance / capacity | DEC-029 unchanged: `--balance-labels sqrt`, hidden 128, no warm start; vocab rebuilt from data (picks up Freeze per DEC-032). |
+| Gate | Freeze/gate evals stay tau=0 on the existing mixed CSV names; exploration data never mixes into gate CSVs. |
+
+**Why:** With the teacher signal broken for Arms, the only trustworthy label source is the policy's own winning behavior, and that needs coverage: exploration around the current head visits the states (gap closers, swing specials that now resolve, pet lines) that win-anchored CE can then reinforce.
+
+**Consequences:** Orchestrator `duel-farm` mixed profile gains the explore/gate split (`config.ps1`); retrain order per class: exploratory mixed farm -> win-anchored retrain -> offline degeneracy gate -> tau=0 smoke (DEC-029 order preserved).

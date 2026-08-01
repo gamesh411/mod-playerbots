@@ -488,6 +488,9 @@ bool PlayerbotAIConfig::Initialize()
     // DEC-022: farm τ=10; τ≤0 ⇒ argmax (demo / freeze).
     mlDuelBracketSoftmaxTemperature =
         sConfigMgr->GetOption<float>("AiPlayerbot.MlDuelBracket.SoftmaxTemperature", 10.0f);
+    // Stock (queue Softmax-stock) seats only; < 0 follows SoftmaxTemperature.
+    mlDuelBracketStockSoftmaxTemperature =
+        sConfigMgr->GetOption<float>("AiPlayerbot.MlDuelBracket.StockSoftmaxTemperature", -1.0f);
     mlDuelBracketParkAlliance =
         sConfigMgr->GetOption<std::string>("AiPlayerbot.MlDuelBracket.ParkAlliance", "0,-9120,355,93.2,0.7");
     mlDuelBracketParkHorde =

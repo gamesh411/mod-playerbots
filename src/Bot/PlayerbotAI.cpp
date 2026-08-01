@@ -3551,7 +3551,9 @@ bool PlayerbotAI::CanCastPetSpell(uint32 spellId, Unit* target)
     if (!spellId || !bot)
         return false;
 
-    Pet* pet = bot->GetPet();
+    // GetGuardianPet: the unglyphed Water Elemental is a Guardian with a Unit-high guid, which
+    // Player::GetPet refuses - command/legality checks must still see it (DEC-027 Freeze).
+    Guardian* pet = bot->GetGuardianPet();
     if (!pet || !pet->IsAlive() || !pet->HasSpell(spellId))
         return false;
 
@@ -3616,7 +3618,9 @@ bool PlayerbotAI::CanCastPetSpell(uint32 spellId, float x, float y, float z)
     if (!spellId || !bot)
         return false;
 
-    Pet* pet = bot->GetPet();
+    // GetGuardianPet: the unglyphed Water Elemental is a Guardian with a Unit-high guid, which
+    // Player::GetPet refuses - command/legality checks must still see it (DEC-027 Freeze).
+    Guardian* pet = bot->GetGuardianPet();
     if (!pet || !pet->IsAlive() || !pet->HasSpell(spellId))
         return false;
 
@@ -3664,7 +3668,9 @@ bool PlayerbotAI::CommandPetCastSpell(uint32 spellId, Unit* target)
     if (!spellId || !bot)
         return false;
 
-    Pet* pet = bot->GetPet();
+    // GetGuardianPet: the unglyphed Water Elemental is a Guardian with a Unit-high guid, which
+    // Player::GetPet refuses - command/legality checks must still see it (DEC-027 Freeze).
+    Guardian* pet = bot->GetGuardianPet();
     if (!pet || !pet->IsAlive() || !pet->HasSpell(spellId))
         return false;
 
@@ -3750,7 +3756,9 @@ bool PlayerbotAI::CommandPetCastSpell(uint32 spellId, float x, float y, float z)
     if (!spellId || !bot)
         return false;
 
-    Pet* pet = bot->GetPet();
+    // GetGuardianPet: the unglyphed Water Elemental is a Guardian with a Unit-high guid, which
+    // Player::GetPet refuses - command/legality checks must still see it (DEC-027 Freeze).
+    Guardian* pet = bot->GetGuardianPet();
     if (!pet || !pet->IsAlive() || !pet->HasSpell(spellId))
         return false;
 
