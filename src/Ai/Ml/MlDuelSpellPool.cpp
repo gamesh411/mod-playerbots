@@ -89,6 +89,11 @@ void TryAddCandidate(std::vector<MlDuelSpellCandidate>& out, PlayerbotAI* botAI,
     if (spellId == SPELL_MELEE_AUTO_ATTACK)
         return;
 
+    // Dual-spec activation spells (Activate Primary/Secondary Spec): always-legal persistent
+    // state flips in every dual-spec character's book - toggle family, not duel casts.
+    if (spellId == 63644 || spellId == 63645)
+        return;
+
     SpellInfo const* info = sSpellMgr->GetSpellInfo(spellId);
     if (!info || info->IsPassive() || info->IsAutoRepeatRangedSpell() || IsNoiseSpell(info))
         return;
