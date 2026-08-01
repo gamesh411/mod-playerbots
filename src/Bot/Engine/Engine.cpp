@@ -332,6 +332,21 @@ bool Engine::DoNextAction(Unit* /*unit*/, uint32 /*depth*/, bool minimal)
                 // Bootstrap / cold start: equal logits ⇒ Softmax(τ) is uniform over legal spell ids.
                 logits.assign(candidates.size(), 0.0f);
             }
+            else if (DuelSoftmaxTau(self) > 0.0f)
+            {
+                // DEC-033: out-of-vocab legal candidates (e.g. pet spells newly reachable via
+                // DEC-032) score -inf and would never be explored, so the data-derived vocab
+                // could never grow. While τ>0 they explore at the weakest in-vocab logit;
+                // τ=0 keeps them masked.
+                float minLogit = std::numeric_limits<float>::infinity();
+                for (float logit : logits)
+                    if (std::isfinite(logit) && logit < minLogit)
+                        minLogit = logit;
+                if (std::isfinite(minLogit))
+                    for (float& logit : logits)
+                        if (!std::isfinite(logit))
+                            logit = minLogit;
+            }
 
             // DAgger expert: S1 teacher τ=0 on queue ∩ legal spellbook (DEC-026).
             // Fallback: Softmax-stock τ=0 relevance when no teacher PBML.

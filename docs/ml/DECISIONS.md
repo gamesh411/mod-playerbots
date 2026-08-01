@@ -412,6 +412,7 @@ The Arms DAgger teacher projection is degenerate on live chase states (79% Cleav
 | Warrior labels | `--label-scheme win-only` (new): own action on won episodes, everything else dropped - no fallback to the degenerate teacher. |
 | Mage labels | Stays `win-else-expert` (its teacher projection is not range-starved). |
 | Balance / capacity | DEC-029 unchanged: `--balance-labels sqrt`, hidden 128, no warm start; vocab rebuilt from data (picks up Freeze per DEC-032). |
+| Vocab growth | Out-of-vocab legal candidates score -inf from the frozen head; while tau>0 the Engine floors them to the weakest in-vocab logit so they stay explorable (else the data-derived vocab could never grow). tau=0 keeps them masked. |
 | Gate | Freeze/gate evals stay tau=0 on the existing mixed CSV names; exploration data never mixes into gate CSVs. |
 
 **Why:** With the teacher signal broken for Arms, the only trustworthy label source is the policy's own winning behavior, and that needs coverage: exploration around the current head visits the states (gap closers, swing specials that now resolve, pet lines) that win-anchored CE can then reinforce.
