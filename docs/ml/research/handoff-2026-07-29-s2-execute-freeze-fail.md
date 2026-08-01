@@ -82,3 +82,28 @@ Real-player challenge: pending duel set `player->duel` in `CHALLENGED`; old code
 - Artifacts: [`artifacts/duel/s2/README.md`](../../../artifacts/duel/s2/README.md)
 - Design: **DEC-026** in `docs/ml/DECISIONS.md`
 - Orchestrator knobs: `wotlk-playerbots-server/scripts/config.ps1` (`DuelFarm*`, `-DuelMixedSeat`)
+
+## Update 2026-08-01 (retrain session) — DEC-029 + DEC-030 landed; arms blocked on teacher projection
+
+Retrain scheme decided and landed as **DEC-029** (`3e606318`): win-anchored self-imitation (label = own action on won episodes, else S1 expert) with 1/sqrt(freq)-balanced CE, hidden 128.
+Balancing is load-bearing: unbalanced variants stayed argmax-collapsed on Auto Attack even though the label distributions are healthy.
+Offline degeneracy gate (new `check_s2_argmax` scratch tool, argmax over ~20k sampled states + expert-agreement) now runs before every deploy.
+
+Arms smoke of the dec029 heads exposed a mechanical bug, fixed as **DEC-030** (`78de2644`): the spellbook block short-circuits the tick so melee swings never started, and on-next-melee picks (Cleave) never resolved.
+Auto-attack toggles (6603 + `SPELL_ATTR2_AUTO_REPEAT`: 75/5019/3018/2764) are toggle abilities, not casts; they left the candidate pool and the training labels (`--drop-labels`), and the Engine now maintains melee on the duel opponent as engagement scaffolding.
+
+Post-DEC-030 arms smoke (fresh CSV, honest stock, tau=0, ~2.3k matches at eval): warrior WR **1.9%**, stacked FAIL.
+Melee lands now (WR 0.9% -> ~2-4%), but live play is still ~72% Cleave.
+
+**Root cause for arms, measured:** the DEC-026 DAgger expert projection is degenerate on live mixed states.
+`expert_action` on the on-policy arms CSV is **79.0% Cleave r8** - on out-of-range chase ticks only on-next-melee/self casts are `isPossible`, so the queue projection collapses.
+A DAgger retrain with on-policy rows upsampled x8 (`warrior.dec030b.pbml`, not deployed) reached 82.4% expert-agreement on live states and is exactly Cleave spam - imitating this teacher cannot beat stock.
+Gap closers ARE in the frozen vocab (Charge 11578, Intercept 20252, Hamstring 1715), so the head can express anti-kite play; nothing teaches it.
+
+**Next levers for arms (not started):**
+1. Mixed farm with exploration (ranker seat tau ~2-3 instead of 0; needs a config knob separate from the tau=0 gate eval) + win-anchored retrain on that on-policy data - reward pressure instead of the broken imitation signal.
+2. Fix the expert projection for chase states (e.g. score only currently-castable queue actions but let movement/range context in, or gate Cleave/HS expert emission on "swing timer will consume it").
+3. Consider whether the 70-D features can even distinguish "at range, Intercept ready" states; if not, feature work precedes more training.
+
+Frost smoke on the dec030 stack ran separately (see ticket for numbers).
+Archives this session: `ml_decisions_duel_mixed_arms_ranker.dec029-smoke-20260801.csv`, `...dec030-smoke-20260801.csv`, heads `warrior.dec029.pbml` / `warrior.dec030b.pbml` (experiment records, untracked).
