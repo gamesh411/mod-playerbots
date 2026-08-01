@@ -299,8 +299,12 @@ bool Engine::DoNextAction(Unit* /*unit*/, uint32 /*depth*/, bool minimal)
     std::string const& spellPool = sPlayerbotAIConfig.mlDuelBracketSpellPool;
     bool const duelBracketOn = inDuel && sPlayerbotAIConfig.mlDuelBracketEnabled;
 
-    // DEC-026: ranker + spellbook. Multi-logit when loaded; else uniform Softmax explore (bootstrap).
-    bool const useSpellbookRanker = duelBracketOn && policy == "ranker" && spellPool == "spellbook" && self;
+    // DEC-026: ranker + spellbook. Multi-logit when loaded; uniform Softmax explore (bootstrap) only
+    // while τ>0. At τ=0 uniform logits argmax to candidates[0] (junk spam), so a class without a
+    // multi-logit PBML falls through to the queue, where DEC-025 Softmax-stock keeps mixed-seat
+    // "stock" opponents honest.
+    bool const useSpellbookRanker = duelBracketOn && policy == "ranker" && spellPool == "spellbook" && self &&
+                                    (sMlScorer.HasMultiLogitFor(self->getClass()) || DuelSoftmaxTau(self) > 0.0f);
     if (useSpellbookRanker)
     {
         AiObjectContext* context = aiObjectContext;
