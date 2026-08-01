@@ -94,6 +94,21 @@ void TryAddCandidate(std::vector<MlDuelSpellCandidate>& out, PlayerbotAI* botAI,
     if (spellId == 63644 || spellId == 63645)
         return;
 
+    // DEC-030 auto-repeat toggles by explicit id: 3018 (ranged Shoot) passes the
+    // SPELL_ATTR2_AUTO_REPEAT filter on this core, and any id the trainer drops as a label MUST
+    // be masked here too - a dropped label keeps an untrained vocab slot whose arbitrary logits
+    // can win live argmax (measured: 1.5k tau=0 picks of 3018).
+    switch (spellId)
+    {
+        case 75:    // Auto Shot
+        case 2764:  // Throw
+        case 3018:  // Shoot (ranged)
+        case 5019:  // Shoot (wand)
+            return;
+        default:
+            break;
+    }
+
     SpellInfo const* info = sSpellMgr->GetSpellInfo(spellId);
     if (!info || info->IsPassive() || info->IsAutoRepeatRangedSpell() || IsNoiseSpell(info))
         return;
