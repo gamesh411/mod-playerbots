@@ -177,36 +177,39 @@ std::vector<MlDuelSpellCandidate> MlDuelSpellPool::Collect(PlayerbotAI* botAI, U
                          pet->HasSpell(33395) ? 1 : 0,
                          botAI->CanCastPetSpell(33395, duelOpponent) ? 1 : 0);
             }
-            if (Pet* asPet = pet->ToPet())
+            // Union of PetSpellMap and creature template spells: the temporary Water Elemental is
+            // a Pet whose map never learns its command spells (Freeze 33395) - the template is
+            // what the client pet bar actually casts from.
+            CharmInfo* charmInfo = pet->GetCharmInfo();
+            auto isCharmAutocast = [charmInfo](uint32 spellId)
             {
+                if (!charmInfo)
+                    return false;
+                for (uint8 slot = 0; slot < MAX_SPELL_CHARM; ++slot)
+                    if (CharmSpellInfo const* charmSpell = charmInfo->GetCharmSpell(slot))
+                        if (charmSpell->GetAction() == spellId && charmSpell->GetType() == ACT_ENABLED)
+                            return true;
+                return false;
+            };
+
+            std::vector<uint32> petSpellIds;
+            if (Pet* asPet = pet->ToPet())
                 for (PetSpellMap::const_iterator itr = asPet->m_spells.begin(); itr != asPet->m_spells.end(); ++itr)
                 {
                     if (itr->second.state == PETSPELL_REMOVED || itr->second.active == ACT_ENABLED)
                         continue;
-                    TryAddCandidate(out, botAI, itr->first, duelOpponent, true);
+                    petSpellIds.push_back(itr->first);
                 }
-            }
-            else
+            for (uint8 i = 0; i < MAX_CREATURE_SPELLS; ++i)
             {
-                CharmInfo* charmInfo = pet->GetCharmInfo();
-                for (uint8 i = 0; i < MAX_CREATURE_SPELLS; ++i)
-                {
-                    uint32 const spellId = pet->m_spells[i];
-                    if (!spellId)
-                        continue;
-                    bool autocast = false;
-                    if (charmInfo)
-                        for (uint8 slot = 0; slot < MAX_SPELL_CHARM; ++slot)
-                            if (CharmSpellInfo const* charmSpell = charmInfo->GetCharmSpell(slot))
-                                if (charmSpell->GetAction() == spellId && charmSpell->GetType() == ACT_ENABLED)
-                                {
-                                    autocast = true;
-                                    break;
-                                }
-                    if (!autocast)
-                        TryAddCandidate(out, botAI, spellId, duelOpponent, true);
-                }
+                uint32 const spellId = pet->m_spells[i];
+                if (spellId && std::find(petSpellIds.begin(), petSpellIds.end(), spellId) == petSpellIds.end())
+                    petSpellIds.push_back(spellId);
             }
+
+            for (uint32 spellId : petSpellIds)
+                if (!isCharmAutocast(spellId))
+                    TryAddCandidate(out, botAI, spellId, duelOpponent, true);
         }
     }
 

@@ -398,6 +398,8 @@ Root cause: without Glyph of Eternal Water the elemental is summoned as a **Guar
 
 **Consequences:** Worldserver rebuild; mage vocab grows on next retrain; summon usage at tau=0 remains a policy-quality question for win-anchored training (stock queue seats do summon via the `no pet` trigger).
 
+**Measured refinement (same day):** the live probe showed the elemental IS a Pet object on this core (`isPet=1`) but `hasFreeze=0` - its **PetSpellMap never learns the command spells**; the client pet bar casts them from `creature_template_spell` instead. So spell knowledge, not the guid class, was the operative blocker. Fix: pet paths accept PetSpellMap **or** creature-template spells (`GuardianKnowsSpell`), and the pool collects the union. The `GetGuardianPet` resolution stays (covers the guardian shape on cores where the unglyphed elemental is not a Pet).
+
 ### DEC-033 - 2026-08-01 - Exploration-first mixed farm with win-anchored retrain
 **Status:** accepted  
 **Context:** User directive on #19: lean much more heavily on exploration and win-anchored training.
