@@ -305,6 +305,13 @@ bool Engine::DoNextAction(Unit* /*unit*/, uint32 /*depth*/, bool minimal)
                                     (sMlScorer.HasMultiLogitFor(self->getClass()) || DuelSoftmaxTau(self) > 0.0f);
     if (useSpellbookRanker)
     {
+        // DEC-030: melee auto-attack is engagement scaffolding (like scripted movement), not a
+        // learned action. This block short-circuits the tick, so nothing else starts swings, and
+        // on-next-melee picks (Cleave / Heroic Strike) never resolve without them. Auto Attack
+        // (6603) is excluded from the candidate pool for the same reason.
+        if (self->GetVictim() != self->duel->Opponent)
+            self->Attack(self->duel->Opponent, true);
+
         AiObjectContext* context = aiObjectContext;
         std::vector<MlDuelSpellCandidate> candidates = MlDuelSpellPool::Collect(botAI, self->duel->Opponent);
         if (!candidates.empty())

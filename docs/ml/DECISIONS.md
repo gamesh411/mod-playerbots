@@ -341,3 +341,21 @@ Health remains **100%** for both participants (DEC-023). Major ability CDs stay 
 **Why:** Labels in the data are healthy (expert warrior Auto only 14.8%, spread kit) but a 70-D MLP underfits the state-conditional and plain CE degenerates to predicting the marginal everywhere; at tau=0 the always-legal majority action wins argmax in every state. Win-filtering alone keeps the same marginal (winners of junk-vs-junk still spam junk). Frequency balancing changes which action wins argmax per state, which is exactly the tau=0 deploy behavior.
 
 **Consequences:** `train_spellbook_ranker.py` gains `--label-scheme` / `--balance-labels`; retrained heads replace `artifacts/duel/s2/{warrior,mage}.pbml` (prior expert-off heads kept as `*.pre-dec029-20260801-*.pbml`). Smoke + gate numbers land on #19. If seats still fail badly, next lever is another on-policy DAgger farm round with the balanced trainer, not more offline thrash on the same data.
+
+### DEC-030 - 2026-08-01 - Auto-attack toggles are engine scaffolding, not S2 head actions
+**Status:** accepted  
+**Context:** DEC-029 arms smoke (fresh CSV, honest Softmax-stock mage, tau=0, 1150 matches): warrior WR **1.4%**, stacked FAIL. Live action mix: Cleave r8 **69.6%**, Auto Attack 1.3% - divergent from the offline argmax (Auto 33.7%). Mechanical cause, not just policy quality: the spellbook ranker block short-circuits the tick, so nothing else ever starts melee swings, and on-next-melee picks (Cleave / Heroic Strike) never resolve. User input: Attack / Auto Shot / wand Shoot are **toggle** abilities (persistent auto-repeat state), not instant/casted/channelled spells - they do not belong in a pool of castable actions.
+
+**Decision:**
+
+| Piece | Rule |
+|------|------|
+| Melee toggle | Engine maintains melee auto-attack on the duel opponent inside the spellbook ranker block (`self->Attack(opponent, true)` when victim differs), as engagement scaffolding alongside scripted movement (extends DEC-026 "out of head"). |
+| Candidate pool | `MlDuelSpellPool` excludes 6603 (melee Attack) and every `SPELL_ATTR2_AUTO_REPEAT` spell (Auto Shot 75, wand Shoot 5019, ranged Shoot 3018, Throw 2764). |
+| Labels | Trainer `--drop-labels 6603 3018 5019 75 2764`: rows resolving to toggle labels are dropped (win-self falls back to expert label where present). |
+| Vocab | Frozen vocab files keep the ids (PBML compatibility); the logits are dead weight at runtime. |
+| Wand scaffolding | Auto-maintaining wand/ranged toggles for casters is deferred - not needed for the Arms/Frost gate. |
+
+**Why:** A toggle flips persistent state; ticking it repeatedly is a no-op decision that starves real casts, and its always-legal status makes it the natural argmax sink for an underfit head. Removing toggles from both the action space and the labels makes every head decision a real cast, and scaffolded melee makes on-next-melee specials actually resolve.
+
+**Consequences:** Worldserver rebuild required; heads retrained with toggle labels dropped; smoke rerun per DEC-029 order of operations. Prior smoke CSV archived as `ml_decisions_duel_mixed_arms_ranker.dec029-smoke-20260801.csv`.
