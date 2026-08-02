@@ -2,12 +2,12 @@
 
 | File | Class | Notes |
 |------|-------|--------|
-| `warrior.pbml` | Warrior | DEC-033 round-2 win-anchored (`dec033r2`, 2026-08-02); `in=70` `out=47` (stances out per DEC-034) |
-| `mage.pbml` | Mage | DEC-033 round-2 win-anchored (`dec033r2`, 2026-08-02); `in=70` `out=220` (incl. Freeze 33395) |
+| `warrior.pbml` | Warrior | DEC-033 round-3 win-anchored (`dec033r3`, 2026-08-02); `in=70` `out=47` (stances out per DEC-034) |
+| `mage.pbml` | Mage | DEC-033 round-3 win-anchored (`dec033r3`, 2026-08-02); `in=70` `out=220` (incl. Freeze 33395) |
 | `vocab.warrior.txt` | Warrior | Frozen spell-id list (49) used from DAgger r2 onward |
 | `vocab.mage.txt` | Mage | Frozen spell-id list (220) |
 
-**Freeze status:** not cut. Latest stacked smoke (2026-08-02): Arms 59.7% / Frost 24.2% vs stock 74.6/25.8 — both seats still FAIL, frost within 1.6pp of stock baseline. Round trend Arms 1.9→33.8→59.7, Frost 15.6→16.5→24.2. See [`docs/ml/research/handoff-2026-08-02-dec033-round2-smokes.md`](../../docs/ml/research/handoff-2026-08-02-dec033-round2-smokes.md).
+**Freeze status:** not cut. Latest stacked smoke (2026-08-02, round 3): Arms 58.6% / Frost 24.7% vs stock 74.6/25.8 - both seats still FAIL and the round-over-round compounding has stalled (Arms 1.9→33.8→59.7→58.6, Frost 15.6→16.5→24.2→24.7). The explore -> win-anchored loop is converged on the current 70-D features; next levers are the feature-vector extension and summon scaffolding tickets. See [`docs/ml/research/handoff-2026-08-02-dec033-round3-plateau.md`](../../docs/ml/research/handoff-2026-08-02-dec033-round3-plateau.md).
 
 Local-only checkpoints (often untracked): `*.pre-*`, `*.dec0NN*` (weights before/at each retrain).
 
