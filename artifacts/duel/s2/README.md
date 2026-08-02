@@ -2,14 +2,14 @@
 
 | File | Class | Notes |
 |------|-------|--------|
-| `warrior.pbml` | Warrior | Expert-off aggregate CE (2026-07-29); `in=70` `out=49` vocab=49 |
-| `mage.pbml` | Mage | Expert-off aggregate CE (2026-07-29); `in=70` `out=220` vocab=220 |
+| `warrior.pbml` | Warrior | DEC-033 round-2 win-anchored (`dec033r2`, 2026-08-02); `in=70` `out=47` (stances out per DEC-034) |
+| `mage.pbml` | Mage | DEC-033 round-2 win-anchored (`dec033r2`, 2026-08-02); `in=70` `out=220` (incl. Freeze 33395) |
 | `vocab.warrior.txt` | Warrior | Frozen spell-id list (49) used from DAgger r2 onward |
 | `vocab.mage.txt` | Mage | Frozen spell-id list (220) |
 
-**Freeze status:** not cut. First stacked mixed-seat eval **failed hard** (Arms 0.0% / Frost 0.1%). See [`docs/ml/research/handoff-2026-07-29-s2-execute-freeze-fail.md`](../../docs/ml/research/handoff-2026-07-29-s2-execute-freeze-fail.md).
+**Freeze status:** not cut. Latest stacked smoke (2026-08-02): Arms 59.7% / Frost 24.2% vs stock 74.6/25.8 — both seats still FAIL, frost within 1.6pp of stock baseline. Round trend Arms 1.9→33.8→59.7, Frost 15.6→16.5→24.2. See [`docs/ml/research/handoff-2026-08-02-dec033-round2-smokes.md`](../../docs/ml/research/handoff-2026-08-02-dec033-round2-smokes.md).
 
-Local-only checkpoints (often untracked): `*.pre-r2-*`, `*.pre-r3-*`, `*.pre-eo-*` (weights before each retrain).
+Local-only checkpoints (often untracked): `*.pre-*`, `*.dec0NN*` (weights before/at each retrain).
 
 ## Train / deploy
 
