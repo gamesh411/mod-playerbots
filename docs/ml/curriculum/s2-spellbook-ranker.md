@@ -11,7 +11,7 @@
 | **Conf profile** | `duel-farm` with `ActionPolicy=ranker`, `SpellPool=spellbook`; teacher = S1 PBML; full `duel-s2` still [#13](https://github.com/gamesh411/mod-playerbots/issues/13) |
 | **Data tag** | `ml_decisions_duel_s2*.csv` (+ `_r2` / `_r3` / `_eo`) |
 | **Git tag** | _TBD `stage/s2-…`_ — **do not cut** after first freeze fail |
-| **Status** | execute in progress ([#19](https://github.com/gamesh411/mod-playerbots/issues/19)) — runtime + DAgger×2 + expert-off landed; **first stacked freeze FAIL** (near-0% WR both seats). See [handoff 2026-07-29](../research/handoff-2026-07-29-s2-execute-freeze-fail.md) |
+| **Status** | execute in progress ([#19](https://github.com/gamesh411/mod-playerbots/issues/19)) — DEC-029..034 win-anchored arc took Arms to 58.6% / Frost to 24.7% (tau=0 vs honest stock), still stacked FAIL and **plateaued at round 3**; gate now waits on feature-vector extension / summon scaffolding. See [handoff 2026-08-02 round 3](../research/handoff-2026-08-02-dec033-round3-plateau.md) |
 
 ## Goal
 
