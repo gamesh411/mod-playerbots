@@ -107,6 +107,33 @@ Remaining DR effectiveness: level1→`1`, level2→`0.5`, level3→`0.25`, immun
 
 ---
 
+## Pack: CF_MOVE (70–89) — designed (DEC-036), lands with M0 execute
+
+All angles foe-bearing-relative (matching the 9-way intent vocabulary); speeds normalized to base run speed.
+Movement-head PBML input = **90** (state only, no action-flag / action-id packs).
+Ability-head `ML_INPUT_DIM` (82) unchanged.
+Duel logfile for this layout: `ml_decisions_duel_v5.csv`.
+
+| Index | Name | Meaning |
+|------:|------|---------|
+| 70 | `CF_MOVE_SELF_SPEED_FRAC` | Current speed / base run |
+| 71 | `CF_MOVE_SELF_HEADING_REL` | Velocity direction vs foe bearing |
+| 72 | `CF_MOVE_FOE_SPEED_FRAC` | Foe speed / base run |
+| 73 | `CF_MOVE_FOE_HEADING_REL` | Foe velocity direction vs bearing to self |
+| 74 | `CF_MOVE_SELF_FACING_OFFSET` | Facing vs foe bearing (continuous) |
+| 75 | `CF_MOVE_FOE_FACING_OFFSET` | Foe facing vs bearing to self |
+| 76 | `CF_MOVE_CLOSING_SPEED` | d(dist)/dt, normalized |
+| 77 | `CF_MOVE_SELF_AIRBORNE` | Jump state bit |
+| 78 | `CF_MOVE_SELF_SNARE_FRAC` | 1 − (current/base speed) from auras |
+| 79 | `CF_MOVE_SELF_ROOTED` | Self rooted |
+| 80 | `CF_MOVE_FOE_SNARE_FRAC` | Foe snare fraction |
+| 81 | `CF_MOVE_FOE_ROOTED` | Foe rooted |
+| 82–89 | `CF_MOVE_PROBE_N`…`_NW` | 8 walkability probes (height delta + LoS at 4 y, foe-relative), shared with the executor safety clamp |
+
+Log-only columns riding `duel_v5`: `realized_heading` (continuous heading actually executed), `movement_intent` (live movement pick), `expert_movement_intent` (M0 scripted teacher pick, DAgger-style).
+
+---
+
 ## Pack: Action flags (`ActionFlagIndex`) — shipped
 
 | Index | Name | Meaning |
