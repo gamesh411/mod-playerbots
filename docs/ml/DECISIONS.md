@@ -486,3 +486,16 @@ Supersedes the "movement stays scripted" boundary of DEC-022/023/025/026 **for t
 **Why:** Client-authentic kinematics (front-arc speed model, strafe-kiting, jump-turns) are exactly the behaviors the M-track exists to learn; spline movement cannot express them, and the session-packet path gets relay and state handling for free instead of re-implementing it.
 
 **Consequences:** M0 execute (#21) is unblocked and lands this design; FEATURES.md gains the CF_MOVE pack section; M0 freezes per DEC-019 as a code+conf sentinel (no PBML) and opens eval epoch 2.
+
+### DEC-037 - 2026-08-05 - Fair rematch: zero Rage / Runic Power and clear all cooldowns at duel end
+**Status:** accepted  
+**Context:** user directive during M0 execute ([#21](https://github.com/gamesh411/mod-playerbots/issues/21)).
+Supersedes the DEC-023/024 carryover behavior for build-up pools and the keep-cooldowns default; the DEC-024 *match-start gate* split (Rage / Runic Power ungated, regenerative pools full) stands unchanged.
+
+**Decision:**
+- `RestoreForRematch` zeroes **Rage** and **Runic Power** (build-up pools) instead of leaving them banked, so a Warrior / DK cannot open the next duel with resources the other class has no equivalent of. Regenerative pools stay topped; DK runes stay cleared.
+- `AiPlayerbot.MlDuelBracket.ResetCooldownsOnDuelEnd` defaults to **1** (code default, conf.dist, and the orchestrator duel-farm profile): every duel starts from a clean cooldown slate.
+
+**Why:** rematch fairness — carryover rage/RP and rolling cooldowns made consecutive duels state-dependent, biasing winrates and training data toward whoever ended the previous duel resource-rich.
+
+**Consequences:** duel-farm data collected after this change is not directly comparable to pre-DEC-037 CSVs (opener distributions shift); the M0 throughput gate control and movement runs are both measured under the new rules.

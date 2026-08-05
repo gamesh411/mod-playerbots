@@ -434,11 +434,15 @@ void MlDuelBracket::RestoreForRematch(Player* bot)
 
     bot->SetFullHealth();
 
-    // Top every resource except Rage and Runic Power (DEC-024 + duel-farm reset).
+    // Top every regenerative resource; zero the build-up pools (Rage / Runic Power) so a seat
+    // cannot open the rematch with banked resources the other class has no equivalent of (DEC-037).
     for (uint32 p = POWER_MANA; p < MAX_POWERS; ++p)
     {
         if (p == POWER_RAGE || p == POWER_RUNIC_POWER)
+        {
+            bot->SetPower(Powers(p), 0);
             continue;
+        }
         // Rune readiness is cleared below; POWER_RUNE is not a fillable pool.
         if (p == POWER_RUNE)
             continue;
