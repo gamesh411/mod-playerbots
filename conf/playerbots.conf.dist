@@ -2245,6 +2245,10 @@ AiPlayerbot.MlDuelMovement.Enable = 0
 AiPlayerbot.MlDuelMovement.SubtickMs = 100
 # Walkability probe distance (yards) for the 8 foe-relative probes (features + safety clamp).
 AiPlayerbot.MlDuelMovement.ProbeRangeYd = 4
+# Broadcast movement at real-client cadence (state changes + 500ms heartbeats) instead of every
+# subtick. Default 0 = full-fidelity 10Hz broadcasts. Farms enable it: measured +67% duels/hour
+# at 450 bots (packet fan-out to observers and the map thread is the cost).
+AiPlayerbot.MlDuelMovement.ThrottleBroadcast = 0
 
 #
 #

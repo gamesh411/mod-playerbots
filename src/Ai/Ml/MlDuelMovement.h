@@ -42,6 +42,8 @@ struct MlBotMovementState
     float realizedHeading = 0.0f;
     float probes[8] = {1.f, 1.f, 1.f, 1.f, 1.f, 1.f, 1.f, 1.f};
     uint32 probeStampMs = 0;
+    // DEC-036 throughput remediation: refresh alternating probe halves (4 per pass).
+    uint8 probePhase = 0;
     bool moving = false;
     uint32 moveFlags = 0;
     float facing = 0.0f;
