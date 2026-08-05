@@ -179,11 +179,20 @@ void MlDuelMovement::UpdateBot(PlayerbotAI* botAI, MlBotMovementState& state, ui
         return;
     }
 
-    // External motion (charge, knockback, fear) owns movement while its spline runs.
-    if (!bot->movespline->Finalized())
+    // Executor-owned directional flags must not linger when we yield control (isMoving() gates
+    // legacy pathing); FALLING is left alone here — knockback/fall handling owns it.
+    auto yieldMoveFlags = [&]()
     {
         state.moving = false;
         state.moveFlags = 0;
+        bot->m_movementInfo.RemoveMovementFlag(MOVEMENTFLAG_FORWARD | MOVEMENTFLAG_BACKWARD |
+                                               MOVEMENTFLAG_STRAFE_LEFT | MOVEMENTFLAG_STRAFE_RIGHT);
+    };
+
+    // External motion (charge, knockback, fear) owns movement while its spline runs.
+    if (!bot->movespline->Finalized())
+    {
+        yieldMoveFlags();
         state.suppressed = false;
         return;
     }
@@ -192,8 +201,7 @@ void MlDuelMovement::UpdateBot(PlayerbotAI* botAI, MlBotMovementState& state, ui
         bot->HasUnitState(UNIT_STATE_LOST_CONTROL))
     {
         // Root enforcement / control loss: the server already stopped us; packets would be rejected.
-        state.moving = false;
-        state.moveFlags = 0;
+        yieldMoveFlags();
         return;
     }
 
@@ -507,11 +515,19 @@ float MlDuelMovement::GetRealizedHeading(ObjectGuid guid) const
 void MlDuelMovement::EnsureStopped(Player* bot, MlBotMovementState& state)
 {
     bool const wasMoving = state.moving || state.airborne;
+    bool const wasAirborne = state.airborne;
     state.moving = false;
     state.airborne = false;
     state.moveFlags = 0;
     if (!wasMoving)
         return;
+    // Server truth first, packet second: legacy pathing (MoveTowardPartner, PatrolNearPark)
+    // gates on isMoving(), so executor move flags must never outlive the executor — even when
+    // the STOP packet cannot be dispatched (root, live spline).
+    bot->m_movementInfo.RemoveMovementFlag(MOVEMENTFLAG_FORWARD | MOVEMENTFLAG_BACKWARD |
+                                           MOVEMENTFLAG_STRAFE_LEFT | MOVEMENTFLAG_STRAFE_RIGHT);
+    if (wasAirborne)
+        bot->m_movementInfo.RemoveMovementFlag(MOVEMENTFLAG_FALLING);
     if (bot->IsRooted() || bot->HasUnitState(UNIT_STATE_ROOT))
         return;  // server-side root already stopped us; a rootless packet would be rejected
     SendMovePacket(bot, state, MSG_MOVE_STOP, 0, bot->GetPositionX(), bot->GetPositionY(),
