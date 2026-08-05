@@ -210,17 +210,43 @@ void MlDuelMovement::UpdateBot(PlayerbotAI* botAI, MlBotMovementState& state, ui
     state.suppressed = false;
 
     float const bearing = bot->GetAngle(foe);
-    IntentDecision const dec = ComputeScriptedIntent(bot, foe);
+    IntentDecision dec = ComputeScriptedIntent(bot, foe);
+    // Debounce: a changed intent must persist one extra subtick before it takes effect, so
+    // range-boundary jitter (melee reach, kite bands) cannot flap START/STOP broadcasts.
+    if (dec.intent != state.intent)
+    {
+        if (dec.intent == state.pendingIntent && state.pendingCount >= 1)
+        {
+            state.pendingCount = 0;
+        }
+        else
+        {
+            state.pendingIntent = dec.intent;
+            state.pendingCount = 1;
+            dec.intent = state.intent;
+        }
+    }
+    else
+    {
+        state.pendingCount = 0;
+    }
     state.intent = dec.intent;
     state.expertIntent = dec.intent;
 
     ComputeProbes(bot, foe, state);
 
+    uint32 const nowMs = getMSTime();
     auto faceFoe = [&]()
     {
-        if (std::fabs(NormalizeRel(bot->GetOrientation() - bearing)) > 0.15f)
+        float const off = std::fabs(NormalizeRel(bot->GetOrientation() - bearing));
+        if (off <= 0.15f)
+            return;
+        // Broadcast a facing packet at most ~3/s; correct silently in between.
+        if (off > 0.25f && getMSTimeDiff(state.lastPacketMs, nowMs) >= 300)
             SendMovePacket(bot, state, MSG_MOVE_SET_FACING, 0, bot->GetPositionX(), bot->GetPositionY(),
                            bot->GetPositionZ(), bearing);
+        else
+            SilentRelocate(bot, bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ(), bearing);
     };
 
     if (dec.intent == ML_MOVE_INTENT_HOLD)
@@ -303,18 +329,29 @@ void MlDuelMovement::UpdateBot(PlayerbotAI* botAI, MlBotMovementState& state, ui
         return;
     }
 
-    uint16 opcode = MSG_MOVE_HEARTBEAT;
-    if (!state.moving || state.moveFlags != moveFlags)
-        opcode = (moveFlags & MOVEMENTFLAG_STRAFE_LEFT)    ? MSG_MOVE_START_STRAFE_LEFT
-                 : (moveFlags & MOVEMENTFLAG_STRAFE_RIGHT) ? MSG_MOVE_START_STRAFE_RIGHT
-                                                           : MSG_MOVE_START_FORWARD;
-
-    if (SendMovePacket(bot, state, opcode, moveFlags, nx, ny, groundZ, facing))
+    // Observers extrapolate steady motion from the move flags, so only state changes and a
+    // ~500 ms heartbeat need broadcasting; between them the position integrates silently.
+    // This keeps per-bot packet rate at real-client levels instead of one per subtick.
+    bool const stateChanged = !state.moving || state.moveFlags != moveFlags ||
+                              std::fabs(NormalizeRel(facing - state.facing)) > 0.35f;
+    if (stateChanged || getMSTimeDiff(state.lastPacketMs, nowMs) >= 500)
     {
-        state.moving = true;
-        state.moveFlags = moveFlags;
-        state.realizedHeading = NormalizeRel(moveDir - bearing);
+        uint16 opcode = MSG_MOVE_HEARTBEAT;
+        if (!state.moving || state.moveFlags != moveFlags)
+            opcode = (moveFlags & MOVEMENTFLAG_STRAFE_LEFT)    ? MSG_MOVE_START_STRAFE_LEFT
+                     : (moveFlags & MOVEMENTFLAG_STRAFE_RIGHT) ? MSG_MOVE_START_STRAFE_RIGHT
+                                                               : MSG_MOVE_START_FORWARD;
+        if (!SendMovePacket(bot, state, opcode, moveFlags, nx, ny, groundZ, facing))
+            return;
     }
+    else
+    {
+        SilentRelocate(bot, nx, ny, groundZ, facing);
+        state.facing = facing;
+    }
+    state.moving = true;
+    state.moveFlags = moveFlags;
+    state.realizedHeading = NormalizeRel(moveDir - bearing);
 }
 
 void MlDuelMovement::ContinueJump(Player* bot, MlBotMovementState& state, uint32 dtMs)
@@ -340,10 +377,16 @@ void MlDuelMovement::ContinueJump(Player* bot, MlBotMovementState& state, uint32
     }
 
     // Airborne preserves the velocity vector (DEC-036); intents cannot pre-empt the jump.
+    // Observers extrapolate the parabola from the takeoff packet, so mid-air updates stay silent
+    // except one corrective heartbeat.
     float const zOff = kJumpVelocity * t - 0.5f * kGravity * t * t;
-    SendMovePacket(bot, state, MSG_MOVE_HEARTBEAT, state.moveFlags | MOVEMENTFLAG_FALLING, nx, ny,
-                   state.jumpStartZ + std::max(0.0f, zOff), bot->GetOrientation(), state.jumpElapsedMs,
-                   true, state.jumpDirWorld, state.jumpSpeedXY);
+    float const z = state.jumpStartZ + std::max(0.0f, zOff);
+    if (getMSTimeDiff(state.lastPacketMs, getMSTime()) >= 400)
+        SendMovePacket(bot, state, MSG_MOVE_HEARTBEAT, state.moveFlags | MOVEMENTFLAG_FALLING, nx, ny, z,
+                       bot->GetOrientation(), state.jumpElapsedMs, true, state.jumpDirWorld,
+                       state.jumpSpeedXY);
+    else
+        SilentRelocate(bot, nx, ny, z, bot->GetOrientation());
 }
 
 void MlDuelMovement::StartJumpTurn(Player* bot, MlBotMovementState& state, float /*newFacing*/)
@@ -498,5 +541,16 @@ bool MlDuelMovement::SendMovePacket(Player* bot, MlBotMovementState& state, uint
 
     session->HandleMovementOpcodes(data);
     state.facing = o;
+    state.lastPacketMs = getMSTime();
     return true;
+}
+
+void MlDuelMovement::SilentRelocate(Player* bot, float x, float y, float z, float o)
+{
+    if (!bot->movespline->Finalized())
+        return;
+    o = Position::NormalizeOrientation(o);
+    bot->UpdatePosition(x, y, z, o);
+    bot->m_movementInfo.pos.Relocate(x, y, z, o);
+    bot->m_movementInfo.time = getMSTime();
 }
