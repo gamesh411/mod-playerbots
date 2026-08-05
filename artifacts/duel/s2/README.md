@@ -7,7 +7,7 @@
 | `vocab.warrior.txt` | Warrior | Frozen spell-id list (49) used from DAgger r2 onward |
 | `vocab.mage.txt` | Mage | Frozen spell-id list (220) |
 
-**Freeze status:** not cut. Latest stacked smoke (2026-08-02, round 3): Arms 58.6% / Frost 24.7% vs stock 74.6/25.8 - both seats still FAIL and the round-over-round compounding has stalled (Arms 1.9→33.8→59.7→58.6, Frost 15.6→16.5→24.2→24.7). The explore -> win-anchored loop is converged on the current 70-D features; next levers are the feature-vector extension and summon scaffolding tickets. See [`docs/ml/research/handoff-2026-08-02-dec033-round3-plateau.md`](../../docs/ml/research/handoff-2026-08-02-dec033-round3-plateau.md).
+**Freeze status:** waived, not cut (**DEC-035**, 2026-08-05). Latest stacked smoke (2026-08-02, round 3): Arms 58.6% / Frost 24.7% vs stock 74.6/25.8 - both seats still FAIL and the round-over-round compounding has stalled (Arms 1.9→33.8→59.7→58.6, Frost 15.6→16.5→24.2→24.7). The explore -> win-anchored loop converged on the current 70-D features; per DEC-035 the movement track (M0..M2) is the main line and the ability head is revisited at M2 on movement-active data. `dec033r3` heads stay canonical. See [`docs/ml/research/handoff-2026-08-02-dec033-round3-plateau.md`](../../docs/ml/research/handoff-2026-08-02-dec033-round3-plateau.md).
 
 Local-only checkpoints (often untracked): `*.pre-*`, `*.dec0NN*` (weights before/at each retrain).
 
