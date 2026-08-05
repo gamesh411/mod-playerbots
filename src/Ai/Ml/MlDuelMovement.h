@@ -47,6 +47,13 @@ struct MlBotMovementState
     float facing = 0.0f;
     int8 strafeSide = 1;  // sticky strafe-away side; flip only when probes block it
     bool suppressed = false;  // stopped for a hardcast / channel
+    // Broadcast throttle: observers extrapolate from move flags, so steady motion only needs a
+    // heartbeat every ~500 ms (real-client cadence); in between the position integrates silently.
+    uint32 lastPacketMs = 0;
+    // Intent debounce: a candidate intent must persist one extra subtick before it switches,
+    // so range-boundary jitter cannot flap START/STOP packets.
+    uint8 pendingIntent = 0;
+    uint8 pendingCount = 0;
     // Jump-turn (atomic until landing)
     bool airborne = false;
     uint32 jumpElapsedMs = 0;
@@ -99,6 +106,8 @@ private:
     bool SendMovePacket(Player* bot, MlBotMovementState& state, uint16 opcode, uint32 moveFlags,
                         float x, float y, float z, float o, uint32 fallTime = 0, bool withJump = false,
                         float jumpDir = 0.0f, float jumpSpeedXY = 0.0f);
+    // Server-side position/orientation update with no client broadcast (between heartbeats).
+    void SilentRelocate(Player* bot, float x, float y, float z, float o);
     void ComputeProbes(Player* bot, Unit* foe, MlBotMovementState& state);
 
     MlBotMovementState* GetState(ObjectGuid guid, bool create);
