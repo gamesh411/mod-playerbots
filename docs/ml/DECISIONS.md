@@ -438,3 +438,25 @@ Stances are always-legal persistent state flips - the DEC-030 toggle family - an
 **Why:** An action whose precondition and effect are invisible to the features cannot be state-conditionally learned; keeping it in the head only re-creates the DEC-029/030 argmax sink with a different id.
 
 **Consequences:** Worldserver rebuild (pool exclusion); `warrior.dec033b.pbml` (win-only + inv balance) deploys as canonical `warrior.pbml`; offline degeneracy checker gains `--exclude` to mirror runtime masks.
+
+### DEC-035 - 2026-08-05 - S2 soft-fail waiver; movement-first pivot (supersedes charting sequencing decision A)
+**Status:** accepted  
+**Context:** [#19](https://github.com/gamesh411/mod-playerbots/issues/19) DEC-033 explore -> win-anchored loop plateaued at round 3 (Arms 58.6% / Frost 24.7% at tau=0 vs honest stock, both stacked FAIL; [round-3 handoff](research/handoff-2026-08-02-dec033-round3-plateau.md)).
+The binding constraint on the statue-movement world is feature starvation ([#25](https://github.com/gamesh411/mod-playerbots/issues/25)).
+User call on the #25 grilling: pursue learned movement (M-track) instead of extending the statue-world feature vector.
+
+**Decision:**
+
+| Piece | Rule |
+|------|------|
+| S2 freeze | **Soft-fail waiver** - do **not** cut a DEC-019 `stage/s2` tag or `duel-s2` packaging. DEC-026 both-seat stacked gate remains unmet. |
+| Canonical S2 artifacts | `dec033r3` heads stay canonical (`artifacts/duel/s2/{warrior,mage}.pbml`); smoke CSVs archived as `*.dec033r3-smoke-20260802.csv`. |
+| No further S2 rounds | No explore/retrain rounds on the 70-D statue-world vector (round-3 handoff recommendation stands). |
+| Pivot | Close [#19](https://github.com/gamesh411/mod-playerbots/issues/19); the movement track is the main line: M0 design ([#20](https://github.com/gamesh411/mod-playerbots/issues/20)) -> M0 execute ([#21](https://github.com/gamesh411/mod-playerbots/issues/21)) -> M1 ([#22](https://github.com/gamesh411/mod-playerbots/issues/22)/[#23](https://github.com/gamesh411/mod-playerbots/issues/23)) -> M2 ([#24](https://github.com/gamesh411/mod-playerbots/issues/24)). |
+| Sequencing | Charting **sequencing decision A** ("S2 freezes against the unchanged movement world before M0 execute") is superseded: #21 is no longer blocked by #19, only by the M0 design DEC. |
+| Feature extension | [#25](https://github.com/gamesh411/mod-playerbots/issues/25) / [#26](https://github.com/gamesh411/mod-playerbots/issues/26) parked: unclaimed, re-blocked behind M1 execute (#23); pet-state / form-stance features land at M2 charting, trained on movement-active data. |
+
+**Why:** The win-anchored CE loop converged on the current features; Arms' remaining -16.0pp is chase behavior - movement - and the round-3 handoff already flagged movement-adjacent features as the likely Arms lever.
+Extending statue-world features buys at best an epoch-1 gate pass, while M0 opens eval epoch 2 and M2 retrains the ability head anyway; feature work is better spent once movement-active data exists.
+
+**Consequences:** S2 stage card + `artifacts/duel/s2/README.md` record the waiver; map Decisions-so-far gets this pointer; M0 design (#20) is the next frontier ticket.
