@@ -26,6 +26,7 @@
 #include "LootObjectStack.h"
 #include "MapMgr.h"
 #include "MlDecisionLogger.h"
+#include "MlDuelMovement.h"
 #include "MotionMaster.h"
 #include "MoveSplineInit.h"
 #include "NewRpgStrategy.h"
@@ -267,6 +268,11 @@ void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal)
     }
 
     AllowActivity();
+
+    // DEC-036: the movement subtick rides every core tick, ahead of the react-delay gate —
+    // the ability loop below stays at its own cadence, untouched.
+    if (sPlayerbotAIConfig.mlDuelMovementEnable)
+        sMlDuelMovement.Update(this, elapsed);
 
     if (!CanUpdateAI())
         return;

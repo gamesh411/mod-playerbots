@@ -77,6 +77,16 @@ DUEL_V4_META = [
     "final_score",
     "in_duel",
 ]
+# duel_v5 (DEC-036): v4 meta + log-only movement columns; features grow 70 -> 90 (CF_MOVE).
+DUEL_V5_META = DUEL_V4_META + [
+    "realized_heading",
+    "movement_intent",
+    "expert_movement_intent",
+]
+DUEL_V5_FEATURES = 90
+# DEC-036: the ability head stays pinned to the 70-feature slice (ML_INPUT_DIM 82);
+# CF_MOVE (f70..f89) is movement-head input only.
+ABILITY_FEATURES = 70
 
 # Mirror CombatDecisionUtil::IsMetaAction (trainer-side safety net for old CSVs).
 META_SUBSTR = (
@@ -114,6 +124,9 @@ def duel_fieldnames_for_width(n_cols: int) -> list[str] | None:
         return DUEL_V3_META + [f"f{i}" for i in range(70)] + ACTION_COLS_V2
     if n_cols == len(DUEL_V4_META) + n_feat_flags:
         return DUEL_V4_META + [f"f{i}" for i in range(70)] + ACTION_COLS_V2
+    # duel_v5: 15 meta + 90 features + 8 flags = 113 cols; distinct from headerless v4 (90).
+    if n_cols == len(DUEL_V5_META) + DUEL_V5_FEATURES + 8:
+        return DUEL_V5_META + [f"f{i}" for i in range(DUEL_V5_FEATURES)] + ACTION_COLS_V2
     return None
 
 
@@ -146,7 +159,7 @@ def resolve_fieldnames(path: Path) -> tuple[list[str], bool]:
     inferred = duel_fieldnames_for_width(len(first))
     if not inferred:
         raise SystemExit(
-            f"Headerless CSV with {len(first)} cols not recognized as duel_v3/v4. "
+            f"Headerless CSV with {len(first)} cols not recognized as duel_v3/v4/v5. "
             "Prepend a header or pass a headed file."
         )
     print(f"schema: injected headerless duel layout cols={len(first)}")
@@ -176,6 +189,9 @@ def load_dataset(
     for path in paths:
         fieldnames, headerless = resolve_fieldnames(path)
         feature_cols = detect_feature_cols(fieldnames)
+        if len(feature_cols) > ABILITY_FEATURES:
+            print(f"schema [{path.name}]: {len(feature_cols)} features -> ability slice {ABILITY_FEATURES} (DEC-036)")
+            feature_cols = feature_cols[:ABILITY_FEATURES]
         has_v2 = all(c in fieldnames for c in ACTION_COLS_V2)
         has_v1 = all(c in fieldnames for c in ACTION_COLS_V1)
         if has_v2:

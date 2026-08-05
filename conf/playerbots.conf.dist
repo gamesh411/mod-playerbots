@@ -2543,8 +2543,8 @@ AiPlayerbot.MlModelPathDuelTeacher.Mage = ""
 AiPlayerbot.MlDuelBracket.Enabled = 0
 # Class:specTab pairs, comma-separated. Default: Arms Warrior versus Frost Mage.
 AiPlayerbot.MlDuelBracket.Pairs = "1:0-8:2"
-# Fresh farms: v4 adds expert_action for DAgger. Rotate when schema changes.
-AiPlayerbot.MlDuelBracket.LogFile = "ml_decisions_duel_v4.csv"
+# Fresh farms: v5 adds CF_MOVE features + movement intent columns (DEC-036). Rotate when schema changes.
+AiPlayerbot.MlDuelBracket.LogFile = "ml_decisions_duel_v5.csv"
 # random | softmax-stock | heuristic | ranker (DEC-018 / DEC-022 / DEC-025).
 AiPlayerbot.MlDuelBracket.ActionPolicy = "softmax-stock"
 # queue | spellbook | union. Spellbook/union: random pool, or ranker multi-logit (DEC-026 S2).
@@ -2564,10 +2564,20 @@ AiPlayerbot.MlDuelBracket.AllowedClassMask = 0
 AiPlayerbot.MlDuelBracket.MaxMatchRange = 80
 # Farm rematch debounce only (DEC-023); resource wait is replaced by park restore.
 AiPlayerbot.MlDuelBracket.RematchCooldownMs = 500
-# When 1, clear all spell cooldowns on duel-end restore. Default 0 (keep CDs).
-AiPlayerbot.MlDuelBracket.ResetCooldownsOnDuelEnd = 0
+# When 1, clear all spell cooldowns on duel-end restore (DEC-037 fair rematch). Default 1.
+# Duel-end restore also zeroes Rage / Runic Power so build-up classes cannot bank an opener.
+AiPlayerbot.MlDuelBracket.ResetCooldownsOnDuelEnd = 1
 # reward = short_reward + TerminalLambda * terminal; keep terminal dominant.
 AiPlayerbot.MlDuelBracket.TerminalLambda = 25.0
+
+# DEC-036 M0 movement channel: packet-driven intent executor + scripted intent movers
+# (Arms chase / Frost kite). Masks legacy scripted movers in duels while enabled.
+# The orchestrator duel-farm profile flips Enable to 1.
+AiPlayerbot.MlDuelMovement.Enable = 0
+# Movement subtick cadence (ms); rides every core tick ahead of the ability react delay.
+AiPlayerbot.MlDuelMovement.SubtickMs = 100
+# Walkability probe distance (yards) for the 8 foe-relative probes (features + safety clamp).
+AiPlayerbot.MlDuelMovement.ProbeRangeYd = 4
 
 #
 #

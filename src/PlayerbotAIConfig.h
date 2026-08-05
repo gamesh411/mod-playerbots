@@ -374,6 +374,10 @@ public:
     uint32 mlDuelBracketRematchCooldownMs;
     // When true, RestoreForRematch also clears spell cooldowns (default off).
     bool mlDuelBracketResetCooldownsOnDuelEnd;
+    // DEC-036 M0 movement channel: packet-driven intent executor + scripted intent movers.
+    bool mlDuelMovementEnable;
+    uint32 mlDuelMovementSubtickMs;
+    float mlDuelMovementProbeRangeYd;
 
     bool summonWhenGroup;
     ShowHideCosmetic randomBotShowHelmet;

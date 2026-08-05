@@ -101,6 +101,35 @@ enum CombatFeatureIndex : size_t
     CF_FOE_HAS_CONTROL_LOSS,
     CF_IN_DUEL,
 
+    // Ability-head boundary: everything above feeds the 82-D ability PBML (DEC-025/026);
+    // the CF_MOVE pack below is movement-head / logging only (DEC-036).
+    CF_ABILITY_FEATURE_COUNT,
+
+    // --- Pack CF_MOVE (70-89): kinematics, impairment, walkability probes (DEC-036) ---
+    // Angles foe-bearing-relative, normalized to [-1, 1] (angle / pi); speeds / base run.
+    CF_MOVE_SELF_SPEED_FRAC = CF_ABILITY_FEATURE_COUNT,
+    CF_MOVE_SELF_HEADING_REL,
+    CF_MOVE_FOE_SPEED_FRAC,
+    CF_MOVE_FOE_HEADING_REL,
+    CF_MOVE_SELF_FACING_OFFSET,
+    CF_MOVE_FOE_FACING_OFFSET,
+    CF_MOVE_CLOSING_SPEED,
+    CF_MOVE_SELF_AIRBORNE,
+    CF_MOVE_SELF_SNARE_FRAC,
+    CF_MOVE_SELF_ROOTED,
+    CF_MOVE_FOE_SNARE_FRAC,
+    CF_MOVE_FOE_ROOTED,
+    // 8 foe-relative walkability probes (height delta + LoS at ProbeRangeYd), shared with the
+    // executor safety clamp. N = toward foe, 45-degree steps counterclockwise.
+    CF_MOVE_PROBE_N,
+    CF_MOVE_PROBE_NE,
+    CF_MOVE_PROBE_E,
+    CF_MOVE_PROBE_SE,
+    CF_MOVE_PROBE_S,
+    CF_MOVE_PROBE_SW,
+    CF_MOVE_PROBE_W,
+    CF_MOVE_PROBE_NW,
+
     CF_FEATURE_COUNT
 };
 

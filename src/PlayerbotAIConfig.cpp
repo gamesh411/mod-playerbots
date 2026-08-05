@@ -499,8 +499,13 @@ bool PlayerbotAIConfig::Initialize()
     mlDuelBracketMaxMatchRange = sConfigMgr->GetOption<uint32>("AiPlayerbot.MlDuelBracket.MaxMatchRange", 80);
     mlDuelBracketRematchCooldownMs =
         sConfigMgr->GetOption<uint32>("AiPlayerbot.MlDuelBracket.RematchCooldownMs", 500);
+    // DEC-037: fair rematches — default on (all CDs cleared alongside the rage/RP zeroing).
     mlDuelBracketResetCooldownsOnDuelEnd =
-        sConfigMgr->GetOption<bool>("AiPlayerbot.MlDuelBracket.ResetCooldownsOnDuelEnd", false);
+        sConfigMgr->GetOption<bool>("AiPlayerbot.MlDuelBracket.ResetCooldownsOnDuelEnd", true);
+    // DEC-036 M0 movement channel; the orchestrator duel-farm profile flips Enable.
+    mlDuelMovementEnable = sConfigMgr->GetOption<bool>("AiPlayerbot.MlDuelMovement.Enable", false);
+    mlDuelMovementSubtickMs = sConfigMgr->GetOption<uint32>("AiPlayerbot.MlDuelMovement.SubtickMs", 100);
+    mlDuelMovementProbeRangeYd = sConfigMgr->GetOption<float>("AiPlayerbot.MlDuelMovement.ProbeRangeYd", 4.0f);
     sMlDuelBracket.LoadFromConfig();
     if (!mlModelPathDuel.empty() || !mlModelPathDuelWarrior.empty() || !mlModelPathDuelMage.empty() ||
         !mlModelPathDuelTeacherWarrior.empty() || !mlModelPathDuelTeacherMage.empty())

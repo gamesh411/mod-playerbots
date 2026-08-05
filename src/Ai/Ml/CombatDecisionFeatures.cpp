@@ -12,6 +12,7 @@
 #include <sstream>
 
 #include "AiFactory.h"
+#include "MlDuelMovement.h"
 #include "Player.h"
 #include "Playerbots.h"
 #include "ServerFacade.h"
@@ -417,6 +418,74 @@ CombatFeatureVector CombatDecisionFeaturesValue::Calculate()
     }
 
     features[CF_IN_DUEL] = (bot->duel && bot->duel->Opponent) ? 1.0f : 0.0f;
+
+    // --- Pack CF_MOVE (DEC-036): kinematics, impairment, walkability probes ---
+    if (foe && foe->IsAlive() && foe->IsInWorld() && foe->GetMapId() == bot->GetMapId())
+    {
+        constexpr float baseRun = 7.0f;  // playerBaseMoveSpeed[MOVE_RUN]
+        auto normalizeRel = [](float a)
+        {
+            while (a > float(M_PI))
+                a -= 2.0f * float(M_PI);
+            while (a < -float(M_PI))
+                a += 2.0f * float(M_PI);
+            return a / float(M_PI);  // [-1, 1]
+        };
+        // Movement direction from client move flags in the unit's facing frame (x fwd, y left).
+        auto moveDir = [](Unit* u, bool& moving)
+        {
+            uint32 const f = u->m_movementInfo.GetMovementFlags();
+            float dx = 0.0f, dy = 0.0f;
+            if (f & MOVEMENTFLAG_FORWARD)
+                dx += 1.0f;
+            if (f & MOVEMENTFLAG_BACKWARD)
+                dx -= 1.0f;
+            if (f & MOVEMENTFLAG_STRAFE_LEFT)
+                dy += 1.0f;
+            if (f & MOVEMENTFLAG_STRAFE_RIGHT)
+                dy -= 1.0f;
+            moving = (dx != 0.0f || dy != 0.0f);
+            return moving ? u->GetOrientation() + std::atan2(dy, dx) : u->GetOrientation();
+        };
+
+        float const bearingToFoe = bot->GetAngle(foe);
+        float const bearingToSelf = foe->GetAngle(bot);
+
+        bool selfMoving = false, foeMoving = false;
+        float const selfMoveDir = moveDir(bot, selfMoving);
+        float const foeMoveDir = moveDir(foe, foeMoving);
+        float const selfSpeed = selfMoving ? bot->GetSpeed(bot->m_movementInfo.GetSpeedType()) : 0.0f;
+        float const foeSpeed = foeMoving ? foe->GetSpeed(foe->m_movementInfo.GetSpeedType()) : 0.0f;
+
+        features[CF_MOVE_SELF_SPEED_FRAC] = std::clamp(selfSpeed / baseRun, 0.0f, 2.0f);
+        features[CF_MOVE_SELF_HEADING_REL] = selfMoving ? normalizeRel(selfMoveDir - bearingToFoe) : 0.0f;
+        features[CF_MOVE_FOE_SPEED_FRAC] = std::clamp(foeSpeed / baseRun, 0.0f, 2.0f);
+        features[CF_MOVE_FOE_HEADING_REL] = foeMoving ? normalizeRel(foeMoveDir - bearingToSelf) : 0.0f;
+        features[CF_MOVE_SELF_FACING_OFFSET] = normalizeRel(bot->GetOrientation() - bearingToFoe);
+        features[CF_MOVE_FOE_FACING_OFFSET] = normalizeRel(foe->GetOrientation() - bearingToSelf);
+
+        // Closing speed: sum of each side's velocity component along the separation axis.
+        float closing = 0.0f;
+        if (selfMoving)
+            closing += selfSpeed * std::cos(selfMoveDir - bearingToFoe);
+        if (foeMoving)
+            closing += foeSpeed * std::cos(foeMoveDir - bearingToSelf);
+        features[CF_MOVE_CLOSING_SPEED] = std::clamp(closing / baseRun, -2.0f, 2.0f);
+
+        features[CF_MOVE_SELF_AIRBORNE] =
+            bot->m_movementInfo.HasMovementFlag(MOVEMENTFLAG_FALLING | MOVEMENTFLAG_FALLING_FAR) ? 1.0f : 0.0f;
+        features[CF_MOVE_SELF_SNARE_FRAC] = std::clamp(1.0f - bot->GetSpeed(MOVE_RUN) / baseRun, 0.0f, 1.0f);
+        features[CF_MOVE_SELF_ROOTED] =
+            (bot->IsRooted() || bot->HasUnitState(UNIT_STATE_ROOT)) ? 1.0f : 0.0f;
+        features[CF_MOVE_FOE_SNARE_FRAC] = std::clamp(1.0f - foe->GetSpeed(MOVE_RUN) / baseRun, 0.0f, 1.0f);
+        features[CF_MOVE_FOE_ROOTED] =
+            (foe->IsRooted() || foe->HasUnitState(UNIT_STATE_ROOT)) ? 1.0f : 0.0f;
+
+        float probes[8];
+        sMlDuelMovement.GetProbes(bot, foe, probes);
+        for (int k = 0; k < 8; ++k)
+            features[CF_MOVE_PROBE_N + k] = probes[k];
+    }
 
     return features;
 }

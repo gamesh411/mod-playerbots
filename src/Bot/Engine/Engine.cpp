@@ -9,6 +9,7 @@
 #include "CombatDecisionFeatures.h"
 #include "Event.h"
 #include "MlDecisionLogger.h"
+#include "MlDuelMovement.h"
 #include "MlDuelSpellPool.h"
 #include "MlScorer.h"
 #include "PerfMonitor.h"
@@ -441,6 +442,17 @@ bool Engine::DoNextAction(Unit* /*unit*/, uint32 /*depth*/, bool minimal)
         {
             actionNode = queue.PopBasket(basket);
             LogAction("A:%s - UNKNOWN", actionNode ? actionNode->getName().c_str() : "?");
+            delete actionNode;
+            continue;
+        }
+
+        // DEC-036: while the movement channel drives this duel, legacy scripted movers stay
+        // masked — dropped from the queue before Softmax/Peek can execute them.
+        if (inDuel && sPlayerbotAIConfig.mlDuelMovementEnable &&
+            MlDuelMovement::IsLegacyMovementAction(action->getName()))
+        {
+            actionNode = queue.PopBasket(basket);
+            LogAction("A:%s - MOVE-MASK", actionNode ? actionNode->getName().c_str() : "?");
             delete actionNode;
             continue;
         }
