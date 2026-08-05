@@ -378,6 +378,9 @@ public:
     bool mlDuelMovementEnable;
     uint32 mlDuelMovementSubtickMs;
     float mlDuelMovementProbeRangeYd;
+    // Broadcast movement at real-client cadence (state changes + 500ms heartbeats) instead of
+    // every subtick. Off = full-fidelity 10Hz broadcasts; farms enable it for throughput.
+    bool mlDuelMovementThrottleBroadcast;
 
     bool summonWhenGroup;
     ShowHideCosmetic randomBotShowHelmet;

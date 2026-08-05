@@ -233,16 +233,15 @@ void MlDuelMovement::UpdateBot(PlayerbotAI* botAI, MlBotMovementState& state, ui
     state.intent = dec.intent;
     state.expertIntent = dec.intent;
 
-    ComputeProbes(bot, foe, state);
-
     uint32 const nowMs = getMSTime();
+    bool const throttle = sPlayerbotAIConfig.mlDuelMovementThrottleBroadcast;
     auto faceFoe = [&]()
     {
         float const off = std::fabs(NormalizeRel(bot->GetOrientation() - bearing));
         if (off <= 0.15f)
             return;
-        // Broadcast a facing packet at most ~3/s; correct silently in between.
-        if (off > 0.25f && getMSTimeDiff(state.lastPacketMs, nowMs) >= 300)
+        // Throttled: broadcast a facing packet at most ~3/s, correct silently in between.
+        if (!throttle || (off > 0.25f && getMSTimeDiff(state.lastPacketMs, nowMs) >= 300))
             SendMovePacket(bot, state, MSG_MOVE_SET_FACING, 0, bot->GetPositionX(), bot->GetPositionY(),
                            bot->GetPositionZ(), bearing);
         else
@@ -251,11 +250,14 @@ void MlDuelMovement::UpdateBot(PlayerbotAI* botAI, MlBotMovementState& state, ui
 
     if (dec.intent == ML_MOVE_INTENT_HOLD)
     {
+        // No step, no clamp: probes stay cold while holding (features refresh them on demand).
         EnsureStopped(bot, state);
         faceFoe();
         state.realizedHeading = 0.0f;
         return;
     }
+
+    ComputeProbes(bot, foe, state);
 
     // Safety clamp: slide an invalid step onto the nearest valid 45-degree neighbor; hold if none.
     int const wanted = dec.intent - 1;
@@ -334,7 +336,7 @@ void MlDuelMovement::UpdateBot(PlayerbotAI* botAI, MlBotMovementState& state, ui
     // This keeps per-bot packet rate at real-client levels instead of one per subtick.
     bool const stateChanged = !state.moving || state.moveFlags != moveFlags ||
                               std::fabs(NormalizeRel(facing - state.facing)) > 0.35f;
-    if (stateChanged || getMSTimeDiff(state.lastPacketMs, nowMs) >= 500)
+    if (!throttle || stateChanged || getMSTimeDiff(state.lastPacketMs, nowMs) >= 500)
     {
         uint16 opcode = MSG_MOVE_HEARTBEAT;
         if (!state.moving || state.moveFlags != moveFlags)
@@ -381,7 +383,8 @@ void MlDuelMovement::ContinueJump(Player* bot, MlBotMovementState& state, uint32
     // except one corrective heartbeat.
     float const zOff = kJumpVelocity * t - 0.5f * kGravity * t * t;
     float const z = state.jumpStartZ + std::max(0.0f, zOff);
-    if (getMSTimeDiff(state.lastPacketMs, getMSTime()) >= 400)
+    if (!sPlayerbotAIConfig.mlDuelMovementThrottleBroadcast ||
+        getMSTimeDiff(state.lastPacketMs, getMSTime()) >= 400)
         SendMovePacket(bot, state, MSG_MOVE_HEARTBEAT, state.moveFlags | MOVEMENTFLAG_FALLING, nx, ny, z,
                        bot->GetOrientation(), state.jumpElapsedMs, true, state.jumpDirWorld,
                        state.jumpSpeedXY);
@@ -468,7 +471,9 @@ void MlDuelMovement::ComputeProbes(Player* bot, Unit* foe, MlBotMovementState& s
     float const by = bot->GetPositionY();
     float const bz = bot->GetPositionZ();
 
-    for (int k = 0; k < 8; ++k)
+    // DEC-036 throughput gate remediation: refresh 4 of the 8 directions per pass (alternating
+    // halves), halving vmap query load; any slot is at most ~2 subticks stale.
+    for (int k = state.probePhase; k < 8; k += 2)
     {
         float const ang = bearing + k * float(M_PI_4);
         float const px = bx + std::cos(ang) * range;
@@ -477,6 +482,7 @@ void MlDuelMovement::ComputeProbes(Player* bot, Unit* foe, MlBotMovementState& s
         bool const valid = std::fabs(pz - bz) <= kProbeHeightDelta && bot->IsWithinLOS(px, py, pz + 2.0f);
         state.probes[k] = valid ? 1.0f : 0.0f;
     }
+    state.probePhase ^= 1;
     state.probeStampMs = getMSTime();
 }
 

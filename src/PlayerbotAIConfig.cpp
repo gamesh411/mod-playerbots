@@ -506,6 +506,8 @@ bool PlayerbotAIConfig::Initialize()
     mlDuelMovementEnable = sConfigMgr->GetOption<bool>("AiPlayerbot.MlDuelMovement.Enable", false);
     mlDuelMovementSubtickMs = sConfigMgr->GetOption<uint32>("AiPlayerbot.MlDuelMovement.SubtickMs", 100);
     mlDuelMovementProbeRangeYd = sConfigMgr->GetOption<float>("AiPlayerbot.MlDuelMovement.ProbeRangeYd", 4.0f);
+    mlDuelMovementThrottleBroadcast =
+        sConfigMgr->GetOption<bool>("AiPlayerbot.MlDuelMovement.ThrottleBroadcast", false);
     sMlDuelBracket.LoadFromConfig();
     if (!mlModelPathDuel.empty() || !mlModelPathDuelWarrior.empty() || !mlModelPathDuelMage.empty() ||
         !mlModelPathDuelTeacherWarrior.empty() || !mlModelPathDuelTeacherMage.empty())
