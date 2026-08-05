@@ -460,3 +460,29 @@ User call on the #25 grilling: pursue learned movement (M-track) instead of exte
 Extending statue-world features buys at best an epoch-1 gate pass, while M0 opens eval epoch 2 and M2 retrains the ability head anyway; feature work is better spent once movement-active data exists.
 
 **Consequences:** S2 stage card + `artifacts/duel/s2/README.md` record the waiver; map Decisions-so-far gets this pointer; M0 design (#20) is the next frontier ticket.
+
+### DEC-036 - 2026-08-05 - M0 movement substrate: packet-driven intent executor + scripted intent movers
+**Status:** accepted  
+**Context:** [#20](https://github.com/gamesh411/mod-playerbots/issues/20) M0 design, first ticket of the movement-first pivot (DEC-035).
+Locks the movement substrate ahead of M0 execute ([#21](https://github.com/gamesh411/mod-playerbots/issues/21)).
+Supersedes the "movement stays scripted" boundary of DEC-022/023/025/026 **for the M-track**; those entries stand as historical record.
+
+**Decision:**
+
+| Piece | Rule |
+|------|------|
+| Intent vocabulary | 9-way (hold + 8 compass points), foe-bearing-relative, parameterless, ~0.5 s horizon, re-issued each movement subtick (charting-locked). |
+| Motion mechanism | **Direct velocity control via synthesized client movement packets** through the bot's own `WorldSession` (`MSG_MOVE_START_*` / `MSG_MOVE_HEARTBEAT` / `MSG_MOVE_STOP` with executor-integrated position, move flags, orientation). No MotionMaster splines on the movement channel. Relay, fall handling, and server-side state come from the normal movement handler; core patches limited to bot movement-validation bypass, `#ifdef MOD_PLAYERBOTS`. |
+| Subtick | 100 ms, riding the combat feature cache TTL (`AiPlayerbot.MlDuelMovement.SubtickMs = 100`). Ability loop untouched. |
+| Safety clamps | 8 foe-relative walkability probes per subtick (ground height delta + LoS at `ProbeRangeYd = 4`), computed once and shared between the feature pack and clamping. Invalid step (>2 y drop or wall) **slides** onto the nearest valid 45-degree neighbor direction; hold only if none valid. |
+| Facing solver | Foe kept within **+-70 degrees** of facing while casting (20-degree margin inside the core `HasInArc(pi)` +-90). Retreat bearings inside the limit resolve to full-speed strafe-away; **jump-turn** fires only on dead-away retreat with an instant queued (flip at apex, cast, restore facing before landing), **atomic until landing**. Hardcasts and channels suppress movement (STOP, resume after). Backpedal never solver-chosen; instant turns; airborne preserves the velocity vector. |
+| M0 Arms chase | Intent toward foe when out of melee; hold in melee. No orbit-for-Overpower. |
+| M0 Frost kite | Foe snared/rooted and d < 30 y -> retreat (bank distance). d < 15 y -> retreat (strafe-kite). 15-30 y -> hold, stand and cast. d > 30 y or no LoS -> approach. |
+| Legacy movers | Upstream `MovementActions` untouched; masked in duels while the movement channel is enabled (mirrors the ML combat mask). |
+| Features / schema | **CF_MOVE pack, indices 70-89** (kinematics 8: self/foe speed frac + heading rel, facing offsets, closing speed, airborne; impairment 4: self/foe snare frac + rooted; probes 8). All angles foe-bearing-relative, speeds normalized to base run. Movement head input = 90-D (state only). CSV schema **`duel_v5`** adds the pack plus log-only `realized_heading`, `movement_intent`, `expert_movement_intent`. Ability-head `ML_INPUT_DIM` (82) unchanged. |
+| Conf | `AiPlayerbot.MlDuelMovement.{Enable = 0, SubtickMs = 100, ProbeRangeYd = 4}` in conf.dist; the orchestrator `duel-farm` profile sets `Enable = 1`. |
+| Throughput gate | M0 execute must hold duels/hour >= **90%** of the DEC-023/024 farm baseline; on fail, shrink probe work (8 -> 4 probes, cache on alternate subticks) and re-measure. |
+
+**Why:** Client-authentic kinematics (front-arc speed model, strafe-kiting, jump-turns) are exactly the behaviors the M-track exists to learn; spline movement cannot express them, and the session-packet path gets relay and state handling for free instead of re-implementing it.
+
+**Consequences:** M0 execute (#21) is unblocked and lands this design; FEATURES.md gains the CF_MOVE pack section; M0 freezes per DEC-019 as a code+conf sentinel (no PBML) and opens eval epoch 2.
