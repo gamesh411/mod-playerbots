@@ -10,6 +10,7 @@
 #include <limits>
 
 #include "HeuristicScores.h"
+#include "MlDuelMovement.h"
 #include "Player.h"
 #include "PlayerbotAI.h"
 #include "PlayerbotAIConfig.h"
@@ -59,6 +60,9 @@ void MlDecisionLogger::OnActionExecuted(PlayerbotAI* botAI, std::string const& a
     d.targetHpAtLog = static_cast<uint8>(d.features[CF_TARGET_HEALTH] * 100.0f);
     d.targetWasCasting = d.features[CF_TARGET_IS_CASTING] > 0.5f;
     d.wasInterruptAction = CombatDecisionUtil::IsInterruptAction(actionName);
+    d.realizedHeading = sMlDuelMovement.GetRealizedHeading(d.botGuid);
+    d.movementIntent = sMlDuelMovement.GetIntent(d.botGuid);
+    d.expertMovementIntent = sMlDuelMovement.GetExpertIntent(d.botGuid);
 
     std::lock_guard<std::mutex> lock(mtx);
     d.episodeId = nextEpisodeId++;
@@ -127,10 +131,12 @@ void MlDecisionLogger::WriteRow(MlPendingDecision const& d, float reward, float 
         bool const fileHasContent = probe.good() && probe.tellg() > 0;
         if (!fileHasContent)
         {
-            // duel_v4: expert_action for DAgger (DEC-025).
+            // duel_v5: movement columns + CF_MOVE features (DEC-036), on top of v4 expert_action.
             logExpertAction = true;
+            logMovementCols = true;
+            featureColsToWrite = CF_FEATURE_COUNT;
             out << "episode_id,match_id,bot_guid,time_ms,action,expert_action,reward,short_reward,terminal,heuristic,"
-                   "final_score,in_duel";
+                   "final_score,in_duel,realized_heading,movement_intent,expert_movement_intent";
             for (size_t i = 0; i < CF_FEATURE_COUNT; ++i)
                 out << ",f" << i;
             for (size_t i = 0; i < AF_COUNT; ++i)
@@ -139,24 +145,24 @@ void MlDecisionLogger::WriteRow(MlPendingDecision const& d, float reward, float 
         }
         else
         {
-            // Append-compatible with existing v3 (headerless or without expert_action).
+            // Append-compatible with existing v3/v4/v5 files: keep the file's own layout.
             probe.clear();
             probe.seekg(0);
             std::string firstLine;
             std::getline(probe, firstLine);
             logExpertAction = firstLine.find("expert_action") != std::string::npos;
-            // Headerless duel_v4 is 90 cols (12 meta incl. expert_action + 70 + 8). If a prior
-            // process wrote headerless v4 then restarted, the first data line has no substring
-            // "expert_action" — detect by width so we do not silently downgrade to 89-col v3
-            // mid-file (shifts terminal and breaks eval).
-            if (!logExpertAction && !firstLine.empty())
-            {
-                size_t const commas = static_cast<size_t>(std::count(firstLine.begin(), firstLine.end(), ','));
-                size_t const cols = commas + 1;
-                size_t const v4Cols = 12 + CF_FEATURE_COUNT + AF_COUNT; // 90
-                if (cols >= v4Cols)
-                    logExpertAction = true;
-            }
+            logMovementCols = firstLine.find("movement_intent") != std::string::npos;
+            size_t const commas = static_cast<size_t>(std::count(firstLine.begin(), firstLine.end(), ','));
+            size_t const cols = commas + 1;
+            // Headerless files: detect layout by width. v4 = 12 meta + 70 + 8 = 90 cols;
+            // v5 = 15 meta + 90 + 8 = 113 cols. Do not silently downgrade mid-file.
+            size_t const v4Cols = 12 + CF_ABILITY_FEATURE_COUNT + AF_COUNT;  // 90
+            size_t const v5Cols = 15 + CF_FEATURE_COUNT + AF_COUNT;          // 113
+            if (!logMovementCols && !firstLine.empty() && cols >= v5Cols)
+                logMovementCols = true;
+            if (!logExpertAction && !firstLine.empty() && cols >= v4Cols)
+                logExpertAction = true;
+            featureColsToWrite = logMovementCols ? CF_FEATURE_COUNT : CF_ABILITY_FEATURE_COUNT;
         }
         headerWritten = true;
     }
@@ -166,7 +172,9 @@ void MlDecisionLogger::WriteRow(MlPendingDecision const& d, float reward, float 
         out << "," << expert;
     out << "," << reward << "," << d.shortReward << "," << terminal << "," << d.heuristicScore << "," << d.finalScore
         << ",1";
-    for (size_t i = 0; i < CF_FEATURE_COUNT; ++i)
+    if (logMovementCols)
+        out << "," << d.realizedHeading << "," << uint32(d.movementIntent) << "," << uint32(d.expertMovementIntent);
+    for (size_t i = 0; i < featureColsToWrite; ++i)
         out << "," << d.features[i];
     for (size_t i = 0; i < AF_COUNT; ++i)
         out << "," << flags[i];
@@ -329,6 +337,9 @@ void MlDecisionLogger::LogDuelStartSnapshot(Player* bot, uint32 matchId)
     d.finalScore = 0.0f;
     d.shortReward = 0.0f;
     d.shortResolved = true;
+    d.realizedHeading = sMlDuelMovement.GetRealizedHeading(d.botGuid);
+    d.movementIntent = sMlDuelMovement.GetIntent(d.botGuid);
+    d.expertMovementIntent = sMlDuelMovement.GetExpertIntent(d.botGuid);
     {
         std::lock_guard<std::mutex> lock(mtx);
         d.episodeId = nextEpisodeId++;

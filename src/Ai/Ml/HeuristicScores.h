@@ -31,9 +31,12 @@ enum ActionFlagIndex : size_t
 
 // Disambiguates same-flag actions (frostbolt vs fireball). Not logged — recomputed from action name.
 static constexpr size_t AF_ID_COUNT = 4;
-static constexpr size_t ML_INPUT_DIM = CF_FEATURE_COUNT + AF_COUNT + AF_ID_COUNT; // 82
+// DEC-036: the ability head stays pinned to the 70-feature slice; CF_MOVE (70-89) never feeds it.
+static constexpr size_t ML_INPUT_DIM = CF_ABILITY_FEATURE_COUNT + AF_COUNT + AF_ID_COUNT; // 82
 // Pre-action-id duel PBML (70+8). Still loadable; cannot separate same-flag mage bolts.
-static constexpr size_t ML_INPUT_DIM_NO_ACTION_ID = CF_FEATURE_COUNT + AF_COUNT; // 78
+static constexpr size_t ML_INPUT_DIM_NO_ACTION_ID = CF_ABILITY_FEATURE_COUNT + AF_COUNT; // 78
+// M1 movement head consumes the full state vector (no action-flag / action-id packs).
+static constexpr size_t ML_MOVE_INPUT_DIM = CF_FEATURE_COUNT; // 90
 // Legacy PBML1 (pre-duel packs): 12 core features + 8 action flags.
 static constexpr size_t ML_INPUT_DIM_V1 = 12 + AF_COUNT;
 

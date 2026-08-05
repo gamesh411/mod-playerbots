@@ -36,6 +36,10 @@ struct MlPendingDecision
     uint8 targetHpAtLog = 100;
     bool targetWasCasting = false;
     bool wasInterruptAction = false;
+    // duel_v5 log-only movement columns (DEC-036).
+    float realizedHeading = 0.0f;
+    uint8 movementIntent = 0;
+    uint8 expertMovementIntent = 0;
 };
 
 class MlDecisionLogger
@@ -68,6 +72,10 @@ private:
     bool headerWritten = false;
     // true ⇒ rows include expert_action (duel_v4 / DEC-025). false ⇒ legacy v3 layout.
     bool logExpertAction = true;
+    // true ⇒ duel_v5 (DEC-036): movement columns + the full 90-feature vector. When appending
+    // to a legacy v3/v4 file, both stay off and rows keep the old 70-feature width.
+    bool logMovementCols = true;
+    size_t featureColsToWrite = CF_FEATURE_COUNT;
 };
 
 #define sMlDecisionLogger MlDecisionLogger::instance()

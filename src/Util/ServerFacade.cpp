@@ -5,6 +5,7 @@
  */
 
 #include "ServerFacade.h"
+#include "MlDuelMovement.h"
 #include "Player.h"
 
 #include "TargetedMovementGenerator.h"
@@ -43,6 +44,11 @@ bool ServerFacade::IsDistanceLessOrEqualThan(float dist1, float dist2) { return 
 void ServerFacade::SetFacingTo(Player* bot, WorldObject* wo, bool /*force*/)
 {
     if (!bot)
+        return;
+
+    // DEC-036: while the movement executor drives this duel it owns facing (strafe-first
+    // solver / atomic jump-turn); it either satisfies the cast arc or performs the turn itself.
+    if (sMlDuelMovement.HandleExternalFacing(bot, wo))
         return;
 
     float angle = bot->GetAngle(wo);

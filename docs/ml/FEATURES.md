@@ -107,7 +107,7 @@ Remaining DR effectiveness: level1→`1`, level2→`0.5`, level3→`0.25`, immun
 
 ---
 
-## Pack: CF_MOVE (70–89) — designed (DEC-036), lands with M0 execute
+## Pack: CF_MOVE (70–89) — shipped (DEC-036 / M0 execute)
 
 All angles foe-bearing-relative (matching the 9-way intent vocabulary); speeds normalized to base run speed.
 Movement-head PBML input = **90** (state only, no action-flag / action-id packs).
@@ -174,8 +174,11 @@ Recomputed from the action name at train and inference (not logged). Separates s
 | `reward` | Label | `short + λ*terminal` |
 | `explored` | Meta | ε-greedy (arena) or duel-random policy bit |
 | `in_bg` / `in_arena` / `in_duel` | Filter | Train splits |
+| `realized_heading` | Label (duel_v5) | Continuous heading actually executed, foe-bearing-relative radians |
+| `movement_intent` | Label (duel_v5) | Live 9-way movement pick (M0: scripted intent policy) |
+| `expert_movement_intent` | Label (duel_v5) | Scripted teacher pick (DAgger-style; equals `movement_intent` in M0) |
 
-Rotating files (`ml_decisions_duel_v1.csv` → `_v2.csv`, …) when columns / feature count change. Fresh S1 DAgger farms use `ml_decisions_duel_v4.csv` (adds `expert_action`).
+Rotating files (`ml_decisions_duel_v1.csv` → `_v2.csv`, …) when columns / feature count change. Fresh S1 DAgger farms use `ml_decisions_duel_v4.csv` (adds `expert_action`). Movement-era farms (M0+) use `ml_decisions_duel_v5.csv` (CF_MOVE 70–89 + the three movement columns).
 
 ---
 

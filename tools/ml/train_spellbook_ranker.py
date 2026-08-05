@@ -25,6 +25,8 @@ import numpy as np
 from train_ranker import (
     DUEL_V3_META,
     DUEL_V4_META,
+    DUEL_V5_META,
+    DUEL_V5_FEATURES,
     SELF_CLASS_F,
     is_duel_noise_action,
     is_meta_action,
@@ -63,13 +65,17 @@ def load_spellbook_rows(
                 rows = list(reader)
                 has_expert = "expert_action" in (reader.fieldnames or [])
             else:
-                # Headerless: detect v3 vs v4 by column count.
+                # Headerless: detect v3 vs v4 vs v5 by column count.
                 raw = list(csv.reader(f))
                 if not raw:
                     continue
                 width = len(raw[0])
-                has_expert = width >= 12 + FEATURE_DIM
-                meta = DUEL_V4_META if has_expert else DUEL_V3_META
+                if width >= len(DUEL_V5_META) + DUEL_V5_FEATURES + 8:  # duel_v5 = 113 cols
+                    has_expert = True
+                    meta = DUEL_V5_META
+                else:
+                    has_expert = width >= 12 + FEATURE_DIM
+                    meta = DUEL_V4_META if has_expert else DUEL_V3_META
                 feat_start = len(meta)
                 rows = []
                 for cols in raw:

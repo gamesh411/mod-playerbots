@@ -97,22 +97,23 @@ void MlScorer::BuildInputForDim(CombatFeatureVector const& features, std::string
     for (size_t i = 0; i < outDim; ++i)
         out[i] = 0.0f;
 
-    size_t nFeat = (std::min)(static_cast<size_t>(CF_FEATURE_COUNT), outDim);
+    // Ability heads consume only the 70-feature slice; CF_MOVE never leaks in (DEC-036).
+    size_t nFeat = (std::min)(static_cast<size_t>(CF_ABILITY_FEATURE_COUNT), outDim);
     for (size_t i = 0; i < nFeat; ++i)
         out[i] = features[i];
 
-    if (outDim >= CF_FEATURE_COUNT + AF_COUNT)
+    if (outDim >= CF_ABILITY_FEATURE_COUNT + AF_COUNT)
     {
         for (size_t i = 0; i < AF_COUNT; ++i)
-            out[CF_FEATURE_COUNT + i] = flags[i];
+            out[CF_ABILITY_FEATURE_COUNT + i] = flags[i];
     }
 
-    if (outDim >= CF_FEATURE_COUNT + AF_COUNT + AF_ID_COUNT)
+    if (outDim >= CF_ABILITY_FEATURE_COUNT + AF_COUNT + AF_ID_COUNT)
     {
         float actionId[AF_ID_COUNT];
         HeuristicScores::FillActionIdFeatures(actionName, actionId);
         for (size_t i = 0; i < AF_ID_COUNT; ++i)
-            out[CF_FEATURE_COUNT + AF_COUNT + i] = actionId[i];
+            out[CF_ABILITY_FEATURE_COUNT + AF_COUNT + i] = actionId[i];
     }
 }
 
@@ -184,11 +185,11 @@ bool MlScorer::ScoreSpellbook(PlayerbotAI* botAI, CombatFeatureVector const& fea
         return false;
 
     size_t const dim = model->InputDim();
-    if (dim != CF_FEATURE_COUNT && dim != ML_INPUT_DIM_NO_ACTION_ID && dim != ML_INPUT_DIM)
+    if (dim != CF_ABILITY_FEATURE_COUNT && dim != ML_INPUT_DIM_NO_ACTION_ID && dim != ML_INPUT_DIM)
         return false;
 
     std::vector<float> input(dim, 0.0f);
-    size_t nFeat = (std::min)(static_cast<size_t>(CF_FEATURE_COUNT), dim);
+    size_t nFeat = (std::min)(static_cast<size_t>(CF_ABILITY_FEATURE_COUNT), dim);
     for (size_t i = 0; i < nFeat; ++i)
         input[i] = features[i];
 
