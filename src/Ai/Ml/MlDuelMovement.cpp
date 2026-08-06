@@ -15,7 +15,10 @@
 #include <cmath>
 #include <unordered_set>
 
+#include "DetourExtended.h"
 #include "GameObject.h"
+#include "Map.h"
+#include "MapCollisionData.h"
 #include "MlDecisionLogger.h"
 #include "MlScorer.h"
 #include "MotionMaster.h"
@@ -86,6 +89,27 @@ IntentDecision ComputeScriptedIntent(Player* bot, Unit* foe)
     if (bot->IsWithinMeleeRange(foe))
         return {ML_MOVE_INTENT_HOLD, false};
     return {ML_MOVE_INTENT_TOWARD, false};
+}
+
+// A candidate point must sit on the navmesh: raw height+LoS probing lets 100ms steps
+// stair-climb onto props (tree trunks, siege equipment) that pathing would never enter,
+// leaving kiters unreachable by a melee chaser. Point query only - no path is computed.
+bool OnNavMesh(Player* bot, float x, float y, float z)
+{
+    dtNavMeshQuery const* query = bot->GetMap()->GetMapCollisionData().GetMMapData().GetNavMeshQuery();
+    if (!query)
+        return true;  // no mmaps loaded here: fall back to the height+LoS-only behavior
+
+    float const location[3] = {y, z, x};  // recast coordinate order
+    float const extents[3] = {1.5f, 2.5f, 1.5f};
+    dtQueryFilterExt filter;
+    dtPolyRef ref = 0;
+    float nearest[3] = {0.0f, 0.0f, 0.0f};
+    if (dtStatusFailed(query->findNearestPoly(location, extents, &filter, &ref, nearest)))
+        return false;
+    // The poly must be at the candidate's height: a poly far below (ground under a prop
+    // the candidate is standing on) must not validate the perch.
+    return ref != 0 && std::fabs(nearest[1] - z) <= 2.0f;
 }
 
 // Softmax over the 9 intent logits; tau <= 0 is argmax (DEC-039 farm/demo semantics).
@@ -208,8 +232,12 @@ void MlDuelMovement::Update(PlayerbotAI* botAI, uint32 elapsed)
     {
         if (MlBotMovementState* state = GetState(bot->GetGUID(), false))
         {
-            // Duel over: hand movement back to the legacy movers cleanly.
-            if ((state->moving || state->airborne) && bot->IsAlive())
+            // Duel over: hand movement back to the legacy movers cleanly. This must run for
+            // dead bots too - flags that outlive the executor on a corpse have no client to
+            // clear them, and a revived bot with wedged isMoving() drops out of the park
+            // patrol/pairing pool forever (EnsureStopped strips flags first, packets only
+            // when alive).
+            if (state->moving || state->airborne)
                 EnsureStopped(bot, *state);
             EraseState(bot->GetGUID());
         }
@@ -431,7 +459,7 @@ void MlDuelMovement::UpdateBot(PlayerbotAI* botAI, MlBotMovementState& state, ui
     }
 
     float const groundZ = bot->GetMapHeight(nx, ny, bot->GetPositionZ() + 2.0f);
-    if (std::fabs(groundZ - bot->GetPositionZ()) > 2.5f)
+    if (std::fabs(groundZ - bot->GetPositionZ()) > 2.5f || !OnNavMesh(bot, nx, ny, groundZ))
     {
         EnsureStopped(bot, state);
         state.realizedHeading = 0.0f;
@@ -586,7 +614,8 @@ void MlDuelMovement::ComputeProbes(Player* bot, Unit* foe, MlBotMovementState& s
         float const px = bx + std::cos(ang) * range;
         float const py = by + std::sin(ang) * range;
         float const pz = bot->GetMapHeight(px, py, bz + 2.0f);
-        bool const valid = std::fabs(pz - bz) <= kProbeHeightDelta && bot->IsWithinLOS(px, py, pz + 2.0f);
+        bool const valid = std::fabs(pz - bz) <= kProbeHeightDelta && bot->IsWithinLOS(px, py, pz + 2.0f) &&
+                           OnNavMesh(bot, px, py, pz);
         state.probes[k] = valid ? 1.0f : 0.0f;
     }
     state.probePhase ^= 1;
@@ -627,8 +656,8 @@ void MlDuelMovement::EnsureStopped(Player* bot, MlBotMovementState& state)
                                            MOVEMENTFLAG_STRAFE_LEFT | MOVEMENTFLAG_STRAFE_RIGHT);
     if (wasAirborne)
         bot->m_movementInfo.RemoveMovementFlag(MOVEMENTFLAG_FALLING);
-    if (bot->IsRooted() || bot->HasUnitState(UNIT_STATE_ROOT))
-        return;  // server-side root already stopped us; a rootless packet would be rejected
+    if (!bot->IsAlive() || bot->IsRooted() || bot->HasUnitState(UNIT_STATE_ROOT))
+        return;  // dead / server-side root: flags are stripped, but a packet would be rejected
     SendMovePacket(bot, state, MSG_MOVE_STOP, 0, bot->GetPositionX(), bot->GetPositionY(),
                    bot->GetPositionZ(), bot->GetOrientation());
 }

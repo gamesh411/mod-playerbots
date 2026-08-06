@@ -543,6 +543,14 @@ bool MlDuelBracket::TryMatchOrQueue(PlayerbotAI* botAI)
 
     EnsureAtPark(bot);
     RestoreForRematch(bot);
+
+    // Self-heal wedged move flags: directional flags whose source is gone (executor detach
+    // through death, aborted teleport) have no client to clear them, and they permanently
+    // gate PatrolNearPark / MoveTowardPartner on isMoving().
+    if (bot->isMoving() && bot->GetMotionMaster()->GetCurrentMovementGeneratorType() == IDLE_MOTION_TYPE)
+        bot->m_movementInfo.RemoveMovementFlag(MOVEMENTFLAG_FORWARD | MOVEMENTFLAG_BACKWARD |
+                                               MOVEMENTFLAG_STRAFE_LEFT | MOVEMENTFLAG_STRAFE_RIGHT);
+
     if (!AreaAllowsDuels(bot) || !IsResourceReady(bot))
         return false;
 
