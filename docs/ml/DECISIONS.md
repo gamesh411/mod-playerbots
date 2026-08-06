@@ -520,3 +520,40 @@ Final round: movement **1,277** matches / 20 min (3,831 duels/hour) vs control *
 - Adjacent-teleport rematch instead of walk-in; near-teleport simulated latency (1-2 s) dropped to 100 ms in bracket mode.
 
 **Consequences:** M0 freezes per DEC-019 (code+conf sentinel); eval epoch 2 opens; the M1 farm inherits the overhauled cycle. Revisit the 90% bar only if M1 farming proves data-starved.
+
+### DEC-039 - 2026-08-06 - M1 movement ranker: train / deploy / freeze
+**Status:** accepted  
+**Context:** [#22](https://github.com/gamesh411/mod-playerbots/issues/22) M1 design, second ticket of the movement-first pivot (DEC-035).
+M0 (DEC-036/037/038) froze the packet executor + scripted intent movers and opened eval epoch 2.
+Charting locked the shape: per-class 90-D / 9-logit heads, Softmax tau=10 farm / tau=0 demo, DAgger from the M0 scripted teacher then expert-off reward fine-tune, potential-based range-control shaping, both-seat uplift vs the M0 baseline.
+This DEC locks the remaining knobs: exact potentials and weights, movement-row logging, round counts and dataset sizes, label schemes, freeze gate and eval protocol.
+A code fact forces the logging piece: movement columns currently ride ability-decision rows only (~1 Hz, biased toward cast moments), while the movement channel decides every 100 ms.
+
+**Decision:**
+
+| Piece | Rule |
+|------|------|
+| Movement rows | Dedicated movement CSV `ml_movement_duel_v1.csv` - the movement head does not train on ability rows. Columns: match id, bot guid + class, 90-D features, `movement_intent`, `expert_movement_intent`, `realized_heading`, reward, terminal. Logged every 5th subtick (500 ms, the intent horizon; conf `LogEveryNSubticks = 5`) plus on every intent change; terminal backfilled per match/bot exactly like ability rows. |
+| Shaping | Potential-based, gamma = 1: row reward = Phi(now) - Phi(previous logged row) + `TerminalLambda` * terminal. Deltas are taken between consecutive *logged* rows, so the telescoped sum Phi(end) - Phi(start) survives subsampling. Potentials live in [0,1] and are role-derived by seat. |
+| Arms potential | Phi_A = 1 while the foe is in melee range (core `IsWithinMeleeRange`), else clamp01(1 - (d - 5)/25) - linear to 0 at 30 y. |
+| Frost potential | Phi_F = LoS bit * distance trapezoid: 0 at d <= 5; ramp (d - 5)/10 up to 1 at 15; 1 across 15-30 (the DEC-036 stand band); ramp (35 - d)/5 down to 0 at the 35 y leash. |
+| Terminal weight | `AiPlayerbot.MlDuelMovement.TerminalLambda = 5.0`: win/loss (+-5) dominates the +-1 telescoped shaping range (same terminal-dominant doctrine as `MlDuelBracket.TerminalLambda`, rescaled to [0,1] potentials). |
+| Model / trainer | Per-class PBML, input 90, 9 logits, hidden 64 (escalate to 128 only on a degeneracy-gate failure), epochs 40, lr 1e-2, seed 0. New `tools/ml/train_movement_ranker.py` sharing the PBML writer. `--balance-labels sqrt` in every round (DEC-029: balance is load-bearing; hold/toward are the always-sensible majority intents) and `--max-rows 400000`; full aggregate retrain each round, never drop prior rows (DEC-025). |
+| Round B: bootstrap | Behavior-clone the frozen M0 farm: CE with label = `expert_movement_intent` on M0 on-policy movement rows; >= 1M rows per class before training (~3 h of the DEC-038 farm at ~0.7M movement rows/hour). |
+| DAgger x2 | Deploy ranker movement at tau=10; abilities pinned to the S0 Softmax-stock sentinel (tau=10) on both seats. The scripted teacher keeps running every subtick and is logged as `expert_movement_intent`. >= 1M fresh rows per class per round; retrain CE on the aggregate with expert labels. |
+| Reward fine-tune (expert-off) | One round, label scheme `win-else-expert` on movement rows (own intent on won episodes, else teacher intent; win = last terminal > 0 per match/bot) + sqrt balance - the DEC-029-proven scheme with the M0 mover as fallback teacher. Escalation lever only if this plateaus: reward-weighted CE, row weight = clip(1 + 0.5 * tanh(episode shaped return), 0.5, 1.5). |
+| Deploy conf | `AiPlayerbot.MlDuelMovement.Policy = scripted \| ranker` (default scripted), `AiPlayerbot.MlDuelMovement.SoftmaxTemperature = 10` (demo <= 0 argmax), `AiPlayerbot.MlModelPathDuelMovement.{Warrior,Mage}` (mirrors the DEC-025 per-class paths). Ability channel conf untouched. |
+| Offline degeneracy gate | Before every deploy (DEC-029 pattern), argmax over >= 20k sampled real states. Bootstrap head: >= 90% held-out agreement with the teacher and the mover band structure reproduced per distance band (Frost: retreat < 15, hold 15-30, approach > 30 or no-LoS; Arms: toward out of melee, hold in melee). Later heads: argmax must stay state-conditional - no unconditional single-intent mode. |
+| Freeze gate | Both seats, mixed-seat protocol vs a **fresh epoch-2 M0<->M0 baseline** (same binary, DEC-037 rules, abilities stock tau=0, movement tau=0): warrior WR (M1-move warrior vs M0-move mage) >= baseline warrior WR + delta, and mage WR (M0-move warrior vs M1-move mage) >= baseline mage WR + delta. delta = 0.02, >= 2.4k matches per seat (S-track ops). Absolute 50% is not the gate. |
+| Movement-quality metrics | Stage card, report-only: Arms melee uptime, Frost cast-band uptime (15-30 y with LoS), mean foe distance per seat, snare-sprint and jump-turn counts, teacher-disagreement rate. |
+| Anti-thrash rule | At most 2 extra seat-focused rounds beyond the recipe before a waiver/pivot DEC (S-track lesson: DEC-028/DEC-035). The 9 -> 17-way resolution knob is an escalation inside those rounds only if the movement-quality metrics show quantization binding. |
+| Stage artifacts | DEC-019: `artifacts/duel/m1/manifest.json` + per-class movement PBML; git tag `stage/m1-<slug>`; stage card `docs/ml/curriculum/m1-movement-ranker.md`; farm conf `duel-farm` + `Policy = ranker`; demo `Policy = ranker`, `SoftmaxTemperature <= 0`; data tag `ml_movement_duel_v1`. Stage-replay profile `duel-m1` remains [#13](https://github.com/gamesh411/mod-playerbots/issues/13). |
+
+**Why:**
+- Ability rows undersample the 100 ms movement channel ~10:1 and bias the state distribution toward cast moments; a dedicated CSV at the 500 ms intent horizon keeps volume bounded (~0.7M rows per farm-hour) while consecutive-row deltas preserve the shaping telescope.
+- The potentials mirror the DEC-036 mover thresholds exactly, so the shaping optimum and the DAgger teacher pull in the same direction instead of fighting.
+- Gamma = 1 potential-based shaping telescopes to Phi(end) - Phi(start) and cannot change the optimal policy w.r.t. the terminal objective.
+- Win-anchored balanced CE replaces the "reward/win only" expert-off that failed twice on the S-track (DEC-028 regression, DEC-029 collapse); the M0 mover is a healthier fallback teacher than S1 was, since it is the policy M1 must beat.
+- Pinning the ability channel to the S0 sentinel on both seats for farm and gate makes movement the only variable being measured.
+
+**Consequences:** M1 execute ([#23](https://github.com/gamesh411/mod-playerbots/issues/23)) lands: movement CSV logger + new conf keys, teacher-alongside-ranker logging in the executor, `train_movement_ranker.py`, movement PBML load path (90-D / 9-logit), degeneracy checker + movement-quality metrics in eval tooling, freeze per this DEC. #25/#26 stay parked behind #23 (DEC-035); M2 charting (#24) picks up ability-head co-adaptation once M1 freezes.
