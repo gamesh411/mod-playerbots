@@ -12,6 +12,7 @@
 #include <vector>
 
 #include "ObjectGuid.h"
+#include "Position.h"
 #include "SharedDefines.h"
 
 class Player;
@@ -64,7 +65,8 @@ public:
     void ForceToPark(Player* bot);
     // Unconditional pad teleport (no near-park skip): rematch re-anchoring against duel-chain
     // drift — kiting displaces a pair every duel and chained rematches random-walk it off the pad.
-    void TeleportToPad(Player* bot);
+    // outDest receives the chosen pad point so a rematch pair can land together.
+    void TeleportToPad(Player* bot, Position* outDest = nullptr);
     void EnsureUnmounted(Player* bot);
 
     // Concurrent duel farm metrics (for PrintStats / saturation tuning).

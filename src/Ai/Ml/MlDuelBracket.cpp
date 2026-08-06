@@ -282,7 +282,7 @@ void MlDuelBracket::ForceToPark(Player* bot)
     TeleportToPad(bot);
 }
 
-void MlDuelBracket::TeleportToPad(Player* bot)
+void MlDuelBracket::TeleportToPad(Player* bot, Position* outDest)
 {
     if (!bot || !bot->IsInWorld() || bot->IsBeingTeleported())
         return;
@@ -305,6 +305,8 @@ void MlDuelBracket::TeleportToPad(Player* bot)
     }
     bot->TeleportTo(park.mapId, x, y, z, park.o);
     EnsureUnmounted(bot);
+    if (outDest)
+        outDest->Relocate(x, y, z, park.o);
 }
 
 bool MlDuelBracket::EnsureAtPark(Player* bot)
@@ -626,9 +628,16 @@ bool MlDuelBracket::TryMatchOrQueue(PlayerbotAI* botAI)
     if (bot->GetDistance2d(anchorPark.x, anchorPark.y) > rematchAnchorYd ||
         partner->GetDistance2d(anchorPark.x, anchorPark.y) > rematchAnchorYd)
     {
-        TeleportToPad(bot);
-        TeleportToPad(partner);
-        // Teleports resolve asynchronously; initiate on a later tick from the pad.
+        // Land the pair together at one pad point: independent scatter left them up to 36y
+        // apart and cost an extra adjacent-teleport tick on every rematch.
+        Position padDest;
+        TeleportToPad(bot, &padDest);
+        float const angle = frand(0.f, 6.2831853f);
+        partner->TeleportTo(anchorPark.mapId, padDest.GetPositionX() + 3.f * std::cos(angle),
+                            padDest.GetPositionY() + 3.f * std::sin(angle), padDest.GetPositionZ(),
+                            partner->GetOrientation());
+        EnsureUnmounted(partner);
+        // Teleports resolve asynchronously; initiate on the next tick from the pad.
         return false;
     }
 
