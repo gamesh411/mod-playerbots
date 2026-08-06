@@ -8,7 +8,7 @@
 | **Vocab** | Spell-id template (all ranks + pet); legality mask per tick — frozen **49** warrior / **220** mage |
 | **Movement** | Scripted (unchanged) |
 | **Policy artifact** | `artifacts/duel/s2/{warrior,mage}.pbml` (expert-off working weights; **not** freeze-cut) |
-| **Conf profile** | `duel-farm` with `ActionPolicy=ranker`, `SpellPool=spellbook`; teacher = S1 PBML; full `duel-s2` still [#13](https://github.com/gamesh411/mod-playerbots/issues/13) |
+| **Conf profile** | `duel-farm` with `ActionPolicy=ranker`, `SpellPool=spellbook`; teacher = S1 PBML; stage replay `duel-s2` (**DEC-040**, pins dec033r3) |
 | **Data tag** | `ml_decisions_duel_s2*.csv` (+ `_r2` / `_r3` / `_eo`) |
 | **Git tag** | _TBD `stage/s2-…`_ — **do not cut** after first freeze fail |
 | **Status** | **soft-fail waiver (DEC-035, 2026-08-05)** — DEC-029..034 win-anchored arc took Arms to 58.6% / Frost to 24.7% (tau=0 vs honest stock), still stacked FAIL and plateaued at round 3 on the 70-D statue-world features. Gate waived, no freeze cut; movement track (M0..M2) is the main line, ability-head revisit at M2. See [handoff 2026-08-02 round 3](../research/handoff-2026-08-02-dec033-round3-plateau.md) |

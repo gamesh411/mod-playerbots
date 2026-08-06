@@ -557,3 +557,26 @@ A code fact forces the logging piece: movement columns currently ride ability-de
 - Pinning the ability channel to the S0 sentinel on both seats for farm and gate makes movement the only variable being measured.
 
 **Consequences:** M1 execute ([#23](https://github.com/gamesh411/mod-playerbots/issues/23)) lands: movement CSV logger + new conf keys, teacher-alongside-ranker logging in the executor, `train_movement_ranker.py`, movement PBML load path (90-D / 9-logit), degeneracy checker + movement-quality metrics in eval tooling, freeze per this DEC. #25/#26 stay parked behind #23 (DEC-035); M2 charting (#24) picks up ability-head co-adaptation once M1 freezes.
+
+### DEC-040 - 2026-08-06 - Stage-replay demo profiles in the orchestrator (duel-s0/s1/s2/m0)
+
+**Context:** [#13](https://github.com/gamesh411/mod-playerbots/issues/13) orchestration ticket.
+DEC-019 reserved conf profiles `duel-s{N}` for stage replay; the movement pivot (DEC-035/036) reshaped the stage set to S0/S1/S2 + M0, with M0 the only executed freeze so far (DEC-038).
+A demonstrator needs one command per stage that pins conf + artifact paths without hand-editing conf.
+
+| Decision | Detail |
+|----------|--------|
+| Mechanism | `wotlk-playerbots-server` `-ServerProfile duel-s0 \| duel-s1 \| duel-s2 \| duel-m0`; each rides the existing duel-farm tuner with per-stage pins (`Get-DuelStageReplayProfiles`) overriding the `DuelFarm*` knobs for that configure pass (`Set-DuelStageReplayOverrides`). No forked farm plumbing. |
+| Canonical pins | duel-s0: `softmax-stock`/`queue`, no PBML (S0 sentinel, DEC-022). duel-s1: `ranker`/`queue`, `artifacts/duel/s1/{warrior,mage}.pbml` (canonical round-2, DEC-028). duel-s2: `ranker`/`spellbook`, `artifacts/duel/s2/{warrior,mage}.dec033r3.pbml` immutable snapshots - never the live-learner `s2/{warrior,mage}.pbml` slots (DEC-035). duel-m0: S0 sentinel + `MlDuelMovement.Enable=1` (DEC-036). |
+| Demo ergonomics (all stages) | tau=0 argmax both seats (DEC-022/025/026 demo rule); 10 bots (`DuelStageReplayBotCount`) with rndbot accounts kept farm-sized so farm <-> demo switches never churn accounts; rematch 3000 ms; `ThrottleBroadcast=0` (full 10 Hz broadcasts, DEC-038 demo note); visibility 90 (no farm relief); teacher paths cleared (no DAgger logging); per-stage CSV `ml_decisions_duel_demo_<stage>.csv` so farm CSVs stay clean. |
+| Binary pinning | Stages with an executed DEC-019 freeze (today: duel-m0 -> `stage/m0-packet-executor`) warn when the module HEAD differs from the freeze tag and print the exact checkout + `-RebuildServer` commands; the orchestrator never auto-checkouts the dev tree. Unfrozen S-stages replay their canonical pins on the current binary - an eval-epoch-2 caveat, not an exact-freeze replay. |
+| Extension | Each future freeze (duel-m1 per DEC-039, then M2) adds one `Get-DuelStageReplayProfiles` row + the `-ServerProfile` ValidateSet entries at freeze time. |
+
+**Why:**
+- Reusing the duel-farm tuner keeps one code path for parks, class rebalance, gear, and verification; a per-stage fork would drift.
+- Session-scoped variable overrides are safe because phase 06 dot-sources `config.ps1` fresh on every apply, so demo knobs cannot leak into a later farm apply.
+- Immutable snapshot pins mean a demo replays the decided stage even while the farm keeps retraining the live-learner slots.
+- No auto-checkout: reproducibility guidance must not destroy uncommitted module work.
+
+**Consequences:** #13 closes; landed in `wotlk-playerbots-server` `8168159`.
+Stage cards' conf-profile rows now name their replay profiles; `duel-m1` lands with the M1 freeze ([#23](https://github.com/gamesh411/mod-playerbots/issues/23)).
