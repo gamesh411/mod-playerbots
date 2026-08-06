@@ -62,6 +62,9 @@ public:
     void RestoreForRematch(Player* bot);
     // Always teleport to the faction park pad (duel-farm stickiness).
     void ForceToPark(Player* bot);
+    // Unconditional pad teleport (no near-park skip): rematch re-anchoring against duel-chain
+    // drift — kiting displaces a pair every duel and chained rematches random-walk it off the pad.
+    void TeleportToPad(Player* bot);
     void EnsureUnmounted(Player* bot);
 
     // Concurrent duel farm metrics (for PrintStats / saturation tuning).

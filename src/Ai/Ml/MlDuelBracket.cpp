@@ -279,6 +279,16 @@ void MlDuelBracket::ForceToPark(Player* bot)
     if (IsNearPark(bot) && AreaAllowsDuels(bot))
         return;
 
+    TeleportToPad(bot);
+}
+
+void MlDuelBracket::TeleportToPad(Player* bot)
+{
+    if (!bot || !bot->IsInWorld() || bot->IsBeingTeleported())
+        return;
+    if (bot->duel || bot->InBattleground() || bot->InArena())
+        return;
+
     MlDuelPark const& park = (bot->GetTeamId() == TEAM_ALLIANCE) ? alliancePark : hordePark;
     // Mild scatter once on entry so the pad is not a single stack.
     float const scatter = 18.f;
@@ -608,12 +618,20 @@ bool MlDuelBracket::TryMatchOrQueue(PlayerbotAI* botAI)
     if (!AreaAllowsDuels(bot) || !AreaAllowsDuels(partner) || !IsResourceReady(bot) || !IsResourceReady(partner))
         return false;
 
-    float const dist = bot->GetDistance(partner);
-    if (dist > static_cast<float>(maxMatchRange) + 40.f)
+    // Rematch re-anchoring: duel-chain drift (kite displacement per duel, rematches wherever the
+    // last duel ended) decays pad density until pairing degenerates into long walk-ins. Snap a
+    // drifted pair back to the pad between duels — invisible mid-rematch, keeps density bounded.
+    float constexpr rematchAnchorYd = 60.f;
+    MlDuelPark const& anchorPark = (bot->GetTeamId() == TEAM_ALLIANCE) ? alliancePark : hordePark;
+    if (bot->GetDistance2d(anchorPark.x, anchorPark.y) > rematchAnchorYd ||
+        partner->GetDistance2d(anchorPark.x, anchorPark.y) > rematchAnchorYd)
     {
-        // Too far even for park wander — snap partner in once, then walk.
-        ForceToPark(partner);
+        TeleportToPad(bot);
+        TeleportToPad(partner);
+        // Teleports resolve asynchronously; initiate on a later tick from the pad.
+        return false;
     }
+
     if (bot->GetDistance(partner) > duelRequestRange)
     {
         // Close the gap on foot so duel request can land; retry next tick.
