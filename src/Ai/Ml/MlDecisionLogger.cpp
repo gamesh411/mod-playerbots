@@ -367,6 +367,149 @@ void MlDecisionLogger::OnDuelEnd(Player* bot, float terminal)
     }
 
     if (matchId)
+    {
         FlushMatchDecisions(matchId, bot->GetGUID(), terminal);
+        FlushMovementRows(matchId, bot->GetGUID(), terminal);
+    }
     FlushEpisode(bot, terminal);
+}
+
+namespace
+{
+// DEC-039 role-derived potentials in [0,1]. Frost mirrors the DEC-036 mover bands
+// (retreat < 15, stand 15-30, leash 35); Arms rewards melee contact with a linear ramp.
+float MovementPotential(Player* bot, Unit* foe)
+{
+    float const d = bot->GetDistance(foe);
+    if (bot->getClass() == CLASS_MAGE)
+    {
+        if (!bot->IsWithinLOSInMap(foe))
+            return 0.0f;
+        if (d <= 5.0f)
+            return 0.0f;
+        if (d < 15.0f)
+            return (d - 5.0f) / 10.0f;
+        if (d <= 30.0f)
+            return 1.0f;
+        if (d < 35.0f)
+            return (35.0f - d) / 5.0f;
+        return 0.0f;
+    }
+
+    if (bot->IsWithinMeleeRange(foe))
+        return 1.0f;
+    return std::clamp(1.0f - (d - 5.0f) / 25.0f, 0.0f, 1.0f);
+}
+}  // namespace
+
+void MlDecisionLogger::LogMovementRow(PlayerbotAI* botAI, uint8 intent, uint8 expertIntent, float realizedHeading)
+{
+    if (!sPlayerbotAIConfig.mlLoggingEnabled || !botAI)
+        return;
+
+    Player* bot = botAI->GetBot();
+    if (!bot || !bot->IsInWorld() || !bot->duel || !bot->duel->Opponent)
+        return;
+
+    // Sparring vs a real player never feeds the farm CSVs (same guard as ability rows).
+    if (Player* foe = bot->duel->Opponent->ToPlayer())
+    {
+        PlayerbotAI* foeAI = GET_PLAYERBOT_AI(foe);
+        if (!foeAI || foeAI->IsRealPlayer())
+            return;
+    }
+
+    AiObjectContext* context = botAI->GetAiObjectContext();
+    if (!context)
+        return;
+    auto* featureValue = context->GetValue<CombatFeatureVector>("combat decision features");
+    if (!featureValue)
+        return;
+
+    MlMovementPendingRow r;
+    r.botGuid = bot->GetGUID();
+    r.botClass = bot->getClass();
+    r.logTimeMs = getMSTime();
+    r.intent = intent;
+    r.expertIntent = expertIntent;
+    r.realizedHeading = realizedHeading;
+    r.phi = MovementPotential(bot, bot->duel->Opponent);
+    r.features = featureValue->Get();
+
+    std::lock_guard<std::mutex> lock(mtx);
+    auto it = duelMatchByGuid.find(r.botGuid.GetCounter());
+    if (it == duelMatchByGuid.end())
+        return;  // movement rows only exist inside bracket matches (terminal backfill needs one)
+    r.matchId = it->second;
+
+    std::vector<MlMovementPendingRow>& rows = movementBuffer[r.matchId];
+    if (rows.size() >= 20000)
+        return;  // runaway-match guard; a real duel logs ~100 rows/bot
+    rows.push_back(std::move(r));
+}
+
+void MlDecisionLogger::WriteMovementRow(MlMovementPendingRow const& r, float reward, float terminal)
+{
+    std::string const& path = sPlayerbotAIConfig.mlDuelMovementLogFile;
+    if (path.empty())
+        return;
+
+    std::lock_guard<std::mutex> fileLock(sPlayerbotAIConfig.m_logMtx);
+    std::ofstream out(path.c_str(), std::ios::app);
+    if (!out)
+        return;
+
+    if (!movementHeaderWritten)
+    {
+        std::ifstream probe(path.c_str(), std::ios::binary | std::ios::ate);
+        if (!(probe.good() && probe.tellg() > 0))
+        {
+            out << "match_id,bot_guid,bot_class,time_ms,movement_intent,expert_movement_intent,"
+                   "realized_heading,reward,terminal";
+            for (size_t i = 0; i < CF_FEATURE_COUNT; ++i)
+                out << ",f" << i;
+            out << "\n";
+        }
+        movementHeaderWritten = true;
+    }
+
+    out << r.matchId << "," << r.botGuid.GetCounter() << "," << uint32(r.botClass) << "," << r.logTimeMs << ","
+        << uint32(r.intent) << "," << uint32(r.expertIntent) << "," << r.realizedHeading << "," << reward << ","
+        << terminal;
+    for (size_t i = 0; i < CF_FEATURE_COUNT; ++i)
+        out << "," << r.features[i];
+    out << "\n";
+}
+
+void MlDecisionLogger::FlushMovementRows(uint32 matchId, ObjectGuid botGuid, float terminal)
+{
+    std::vector<MlMovementPendingRow> rows;
+    {
+        std::lock_guard<std::mutex> lock(mtx);
+        auto it = movementBuffer.find(matchId);
+        if (it == movementBuffer.end())
+            return;
+        std::vector<MlMovementPendingRow> keep;
+        for (MlMovementPendingRow& r : it->second)
+        {
+            if (r.botGuid == botGuid)
+                rows.push_back(std::move(r));
+            else
+                keep.push_back(std::move(r));
+        }
+        if (keep.empty())
+            movementBuffer.erase(it);
+        else
+            it->second.swap(keep);
+    }
+
+    // Consecutive-row potential deltas keep the shaping telescope intact under subsampling
+    // (DEC-039); the first row anchors at zero so the sum is Phi(end) - Phi(start).
+    float prevPhi = rows.empty() ? 0.0f : rows.front().phi;
+    for (MlMovementPendingRow const& r : rows)
+    {
+        float const reward = (r.phi - prevPhi) + sPlayerbotAIConfig.mlDuelMovementTerminalLambda * terminal;
+        prevPhi = r.phi;
+        WriteMovementRow(r, reward, terminal);
+    }
 }

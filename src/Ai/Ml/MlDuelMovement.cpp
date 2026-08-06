@@ -16,6 +16,8 @@
 #include <unordered_set>
 
 #include "GameObject.h"
+#include "MlDecisionLogger.h"
+#include "MlScorer.h"
 #include "MotionMaster.h"
 #include "MoveSpline.h"
 #include "ObjectAccessor.h"
@@ -23,6 +25,8 @@
 #include "Player.h"
 #include "PlayerbotAI.h"
 #include "PlayerbotAIConfig.h"
+#include "Playerbots.h"
+#include "Random.h"
 #include "Spell.h"
 #include "SpellAuraDefines.h"
 #include "Timer.h"
@@ -82,6 +86,66 @@ IntentDecision ComputeScriptedIntent(Player* bot, Unit* foe)
     if (bot->IsWithinMeleeRange(foe))
         return {ML_MOVE_INTENT_HOLD, false};
     return {ML_MOVE_INTENT_TOWARD, false};
+}
+
+// Softmax over the 9 intent logits; tau <= 0 is argmax (DEC-039 farm/demo semantics).
+uint8 SampleIntentIndex(float const* logits, size_t n, float tau)
+{
+    size_t best = 0;
+    float maxLogit = logits[0];
+    for (size_t i = 1; i < n; ++i)
+        if (logits[i] > maxLogit)
+        {
+            maxLogit = logits[i];
+            best = i;
+        }
+    if (tau <= 0.0f)
+        return static_cast<uint8>(best);
+
+    float sumWeight = 0.0f;
+    float weights[ML_MOVE_INTENT_COUNT];
+    for (size_t i = 0; i < n; ++i)
+    {
+        weights[i] = std::exp((logits[i] - maxLogit) / tau);
+        sumWeight += weights[i];
+    }
+    float const roll = frand(0.0f, sumWeight);
+    float cumulative = 0.0f;
+    for (size_t i = 0; i < n; ++i)
+    {
+        cumulative += weights[i];
+        if (roll <= cumulative)
+            return static_cast<uint8>(i);
+    }
+    return static_cast<uint8>(n - 1);
+}
+
+// DEC-039 M1 ranker pick. False (missing/mis-shaped model, no context) falls back to scripted.
+bool RankerIntent(PlayerbotAI* botAI, Player* bot, Unit* foe, uint8& outIntent)
+{
+    AiObjectContext* context = botAI->GetAiObjectContext();
+    if (!context)
+        return false;
+    auto* featureValue = context->GetValue<CombatFeatureVector>("combat decision features");
+    if (!featureValue)
+        return false;
+
+    float logits[ML_MOVE_INTENT_COUNT];
+    CombatFeatureVector const features = featureValue->Get();
+    if (!sMlScorer.ScoreMovement(bot->getClass(), features, logits, ML_MOVE_INTENT_COUNT))
+        return false;
+
+    // Sparring vs a real player always plays argmax, mirroring the ability-channel demo rule.
+    float tau = sPlayerbotAIConfig.mlDuelMovementSoftmaxTemperature;
+    if (Player* foePlayer = foe->ToPlayer())
+    {
+        PlayerbotAI* foeAI = GET_PLAYERBOT_AI(foePlayer);
+        if (!foeAI || foeAI->IsRealPlayer())
+            tau = 0.0f;
+    }
+
+    outIntent = SampleIntentIndex(logits, ML_MOVE_INTENT_COUNT, tau);
+    return true;
 }
 }  // namespace
 
@@ -162,12 +226,27 @@ void MlDuelMovement::Update(PlayerbotAI* botAI, uint32 elapsed)
     uint32 const dt = std::min<uint32>(state->accumMs, 400);
     state->accumMs = 0;
     UpdateBot(botAI, *state, dt);
+
+    // DEC-039 movement CSV: every Nth decided subtick (500ms intent horizon at N=5) plus on
+    // every intent change; rewards + terminal resolve at duel end in the logger.
+    if (state->decided && sPlayerbotAIConfig.mlLoggingEnabled)
+    {
+        ++state->sinceLog;
+        uint32 const every = std::max<uint32>(1, sPlayerbotAIConfig.mlDuelMovementLogEveryNSubticks);
+        if (state->sinceLog >= every || state->intent != state->lastLoggedIntent)
+        {
+            sMlDecisionLogger.LogMovementRow(botAI, state->intent, state->expertIntent, state->realizedHeading);
+            state->sinceLog = 0;
+            state->lastLoggedIntent = state->intent;
+        }
+    }
 }
 
 void MlDuelMovement::UpdateBot(PlayerbotAI* botAI, MlBotMovementState& state, uint32 dtMs)
 {
     Player* bot = botAI->GetBot();
     Unit* foe = bot->duel->Opponent;
+    state.decided = false;
     if (!foe || !foe->IsInWorld() || foe->GetMapId() != bot->GetMapId())
         return;
 
@@ -219,6 +298,22 @@ void MlDuelMovement::UpdateBot(PlayerbotAI* botAI, MlBotMovementState& state, ui
 
     float const bearing = bot->GetAngle(foe);
     IntentDecision dec = ComputeScriptedIntent(bot, foe);
+    // The scripted mover runs every subtick as the DAgger teacher (DEC-039), even while the
+    // ranker drives; its raw pick is the expert_movement_intent label.
+    uint8 const teacherIntent = dec.intent;
+    if (sPlayerbotAIConfig.mlDuelMovementPolicy == "ranker")
+    {
+        uint8 rankerPick = ML_MOVE_INTENT_HOLD;
+        if (RankerIntent(botAI, bot, foe, rankerPick))
+        {
+            dec.intent = rankerPick;
+            // Execution mechanics stay policy-independent: retreat picks sprint (turn-and-run)
+            // under the same snare-window condition the scripted kite uses.
+            bool const retreatPick =
+                rankerPick >= ML_MOVE_INTENT_AWAY_LEFT && rankerPick <= ML_MOVE_INTENT_AWAY_RIGHT;
+            dec.sprint = retreatPick && FoeMovementImpaired(foe) && bot->GetDistance(foe) < kKiteMaxYd;
+        }
+    }
     // Debounce: a changed intent must persist one extra subtick before it takes effect, so
     // range-boundary jitter (melee reach, kite bands) cannot flap START/STOP broadcasts.
     if (dec.intent != state.intent)
@@ -239,7 +334,8 @@ void MlDuelMovement::UpdateBot(PlayerbotAI* botAI, MlBotMovementState& state, ui
         state.pendingCount = 0;
     }
     state.intent = dec.intent;
-    state.expertIntent = dec.intent;
+    state.expertIntent = teacherIntent;
+    state.decided = true;
 
     uint32 const nowMs = getMSTime();
     bool const throttle = sPlayerbotAIConfig.mlDuelMovementThrottleBroadcast;
@@ -284,6 +380,7 @@ void MlDuelMovement::UpdateBot(PlayerbotAI* botAI, MlBotMovementState& state, ui
     {
         EnsureStopped(bot, state);
         faceFoe();
+        state.realizedHeading = 0.0f;
         return;
     }
 
@@ -327,6 +424,7 @@ void MlDuelMovement::UpdateBot(PlayerbotAI* botAI, MlBotMovementState& state, ui
             {
                 EnsureStopped(bot, state);
                 faceFoe();
+                state.realizedHeading = 0.0f;
                 return;
             }
         }
@@ -336,6 +434,7 @@ void MlDuelMovement::UpdateBot(PlayerbotAI* botAI, MlBotMovementState& state, ui
     if (std::fabs(groundZ - bot->GetPositionZ()) > 2.5f)
     {
         EnsureStopped(bot, state);
+        state.realizedHeading = 0.0f;
         return;
     }
 

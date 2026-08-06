@@ -372,6 +372,19 @@ public:
     // Broadcast movement at real-client cadence (state changes + 500ms heartbeats) instead of
     // every subtick. Off = full-fidelity 10Hz broadcasts; farms enable it for throughput.
     bool mlDuelMovementThrottleBroadcast;
+    // DEC-039 M1 movement ranker: "scripted" (M0 movers) or "ranker" (per-class movement PBML;
+    // classes without a loaded model fall back to scripted).
+    std::string mlDuelMovementPolicy;
+    // Movement-intent Softmax temperature: farm 10, demo <= 0 => argmax.
+    float mlDuelMovementSoftmaxTemperature;
+    // Movement-row reward = deltaPhi + TerminalLambda * terminal ([0,1] potentials; DEC-039).
+    float mlDuelMovementTerminalLambda;
+    // Movement CSV cadence: log every Nth subtick (500ms at N=5) plus on every intent change.
+    uint32 mlDuelMovementLogEveryNSubticks;
+    std::string mlDuelMovementLogFile;
+    // DEC-039 per-class movement heads (90-D / 9-logit PBML).
+    std::string mlModelPathDuelMovementWarrior;
+    std::string mlModelPathDuelMovementMage;
 
     bool summonWhenGroup;
     ShowHideCosmetic randomBotShowHelmet;

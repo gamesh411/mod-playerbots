@@ -56,6 +56,12 @@ struct MlBotMovementState
     // so range-boundary jitter cannot flap START/STOP packets.
     uint8 pendingIntent = 0;
     uint8 pendingCount = 0;
+    // DEC-039 movement-CSV cadence: every Nth decided subtick plus on intent change.
+    uint8 sinceLog = 0;
+    uint8 lastLoggedIntent = 0xFF;
+    // True when this subtick committed an intent decision (false on suppression / airborne /
+    // external-motion subticks) — only decided subticks are loggable states.
+    bool decided = false;
     // Jump-turn (atomic until landing)
     bool airborne = false;
     uint32 jumpElapsedMs = 0;

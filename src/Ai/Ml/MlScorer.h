@@ -49,15 +49,22 @@ public:
     // Expose model shape for Engine policy routing.
     bool HasMultiLogitFor(uint8 playerClass);
 
+    // DEC-039 M1 movement head: full 90-D feature vector -> 9 intent logits.
+    // Returns false (and the executor falls back to scripted) when no valid model is loaded.
+    bool HasMovementModelFor(uint8 playerClass);
+    bool ScoreMovement(uint8 playerClass, CombatFeatureVector const& features, float* outLogits, size_t outLen);
+
 private:
     MlScorer() = default;
     MlMlpModel const* ModelFor(uint8 playerClass) const;
     MlMlpModel const* TeacherFor(uint8 playerClass) const;
+    MlMlpModel const* MovementModelFor(uint8 playerClass) const;
     float ScoreWithModel(MlMlpModel const* model, Action* action, CombatFeatureVector const& features) const;
 
     MlMlpModel fallbackModel;
     std::unordered_map<uint8, MlMlpModel> classModels;
     std::unordered_map<uint8, MlMlpModel> teacherModels;
+    std::unordered_map<uint8, MlMlpModel> movementModels;
     bool attemptedLoad = false;
 };
 
