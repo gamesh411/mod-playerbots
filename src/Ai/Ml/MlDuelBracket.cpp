@@ -634,10 +634,21 @@ bool MlDuelBracket::TryMatchOrQueue(PlayerbotAI* botAI)
 
     if (bot->GetDistance(partner) > duelRequestRange)
     {
-        // Close the gap on foot so duel request can land; retry next tick.
-        MoveTowardPartner(bot, partner);
-        MoveTowardPartner(partner, bot);
-        return false;
+        // Kite-range duel endings leave pairs 15-30y apart at every rematch; walking that gap
+        // dominated the rematch cycle (movement arm paid it every duel, melee endings never).
+        // Teleport the partner adjacent instead — invisible between duels, uniform cycle time.
+        float const angle = frand(0.f, 6.2831853f);
+        float x = bot->GetPositionX() + 3.0f * std::cos(angle);
+        float y = bot->GetPositionY() + 3.0f * std::sin(angle);
+        float z = bot->GetPositionZ();
+        if (bot->GetMap())
+        {
+            float const ground = bot->GetMap()->GetHeight(bot->GetPhaseMask(), x, y, z + 5.f);
+            if (ground > INVALID_HEIGHT)
+                z = ground + 0.5f;
+        }
+        partner->TeleportTo(bot->GetMapId(), x, y, z, partner->GetOrientation());
+        return false;  // teleport resolves async; initiate next tick
     }
 
     ClearWaiting(bot->GetGUID());
