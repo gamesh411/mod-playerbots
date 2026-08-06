@@ -59,7 +59,7 @@ def load_movement_rows(paths: list[Path], *, class_id: int, include_holdout: boo
     ep_return: dict[tuple[str, str], float] = {}
 
     n_holdout = 0
-    for path in paths:
+    for file_i, path in enumerate(paths):
         with path.open(newline="", encoding="utf-8", errors="replace") as f:
             header = f.readline().strip().split(",")
             idx = {name: i for i, name in enumerate(header)}
@@ -91,7 +91,9 @@ def load_movement_rows(paths: list[Path], *, class_id: int, include_holdout: boo
                     expert = int(cols[i_expert])
                     if not (0 <= intent < N_INTENTS and 0 <= expert < N_INTENTS):
                         continue
-                    key = (cols[i_match], cols[i_guid])
+                    # File index in the key: match ids restart per server boot, so different
+                    # farm windows (separate CSVs) can reuse the same id.
+                    key = (file_i, cols[i_match], cols[i_guid])
                     term = float(cols[i_term])
                     reward = float(cols[i_reward])
                     feats = np.asarray(cols[f_start : f_start + MOVE_FEATURES], dtype=np.float32)
