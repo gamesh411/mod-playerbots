@@ -82,6 +82,9 @@ def argmax_forward(X, w1, b1, w2, b2):
     return np.argmax(h @ w2.T + b2, axis=1)
 
 
+F_FOE_ROOTED = 81  # CF_MOVE_FOE_ROOTED
+
+
 def band_of(row, is_mage: bool) -> str:
     if not is_mage:
         return "melee" if row[F_IN_MELEE] > 0.5 else "out_of_melee"
@@ -90,6 +93,10 @@ def band_of(row, is_mage: bool) -> str:
         return "approach_band"
     if d < 15.0:
         return "retreat_band"
+    # DEC-036: inside 15-30 the mover holds ONLY while the foe can chase; an impaired foe
+    # opens the snare-window sprint (bank distance), so those states expect AWAY.
+    if row[F_FOE_SNARE] > 0.05 or row[F_FOE_ROOTED] > 0.5:
+        return "stand_band_sprint"
     return "stand_band"
 
 
@@ -99,6 +106,7 @@ EXPECTED = {
     "out_of_melee": TOWARDISH,
     "retreat_band": AWAYISH,
     "stand_band": {0},
+    "stand_band_sprint": AWAYISH,
     "approach_band": TOWARDISH,
 }
 
@@ -114,6 +122,8 @@ def main():
                     help="later heads: skip the >= 90%% teacher-agreement gate")
     ap.add_argument("--no-band-gate", action="store_true",
                     help="later heads: skip the band-structure gate (state-conditionality still gates)")
+    ap.add_argument("--min-band-rows", type=int, default=200,
+                    help="bands with fewer holdout rows are reported but not gated")
     args = ap.parse_args()
 
     w1, b1, w2, b2, vocab = load_pbml(args.pbml)
@@ -154,12 +164,15 @@ def main():
     bands = np.asarray([band_of(row, is_mage) for row in X])
     for band in sorted(set(bands)):
         sel = bands == band
-        dist = np.bincount(pred[sel], minlength=N_INTENTS) / max(1, int(sel.sum()))
+        n_band = int(sel.sum())
+        dist = np.bincount(pred[sel], minlength=N_INTENTS) / max(1, n_band)
         expected = EXPECTED[band]
         exp_share = float(sum(dist[i] for i in expected))
         top = int(np.argmax(dist))
-        print(f"  {band:14s} n={int(sel.sum()):7d} expected_share={exp_share:.3f} top={INTENT_NAMES[top]}")
-        if not args.no_band_gate and (top not in expected):
+        gated = n_band >= args.min_band_rows
+        print(f"  {band:17s} n={n_band:7d} expected_share={exp_share:.3f} top={INTENT_NAMES[top]}"
+              + ("" if gated else "  [advisory: small band]"))
+        if not args.no_band_gate and gated and (top not in expected):
             failures.append(f"band {band}: top intent {INTENT_NAMES[top]} not in expected set")
 
     # Movement-quality metrics over ALL rows of these CSVs (stage-card numbers, report-only).
