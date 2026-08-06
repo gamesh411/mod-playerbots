@@ -849,8 +849,10 @@ void PlayerbotAI::HandleTeleportAck()
             bot->StopMoving();
         }
 
-        // simulate near teleport latency
-        SetNextCheckDelay(urand(1000, 2000));
+        // Simulate near teleport latency — except in duel-farm mode, where rematch re-anchoring
+        // teleports a bot between every duel and the simulated 1-2s freeze dominates the
+        // rematch cycle (DEC-023 maximizes matches/hour; latency realism has no training value).
+        SetNextCheckDelay(sPlayerbotAIConfig.mlDuelBracketEnabled ? 100 : urand(1000, 2000));
         return;
     }
 }
