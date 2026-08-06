@@ -2582,6 +2582,21 @@ AiPlayerbot.MlDuelMovement.ProbeRangeYd = 4
 # subtick. Default 0 = full-fidelity 10Hz broadcasts. Farms enable it: measured +67% duels/hour
 # at 450 bots (packet fan-out to observers and the map thread is the cost).
 AiPlayerbot.MlDuelMovement.ThrottleBroadcast = 0
+# DEC-039 M1 movement-intent ranker. "scripted" = M0 movers; "ranker" = per-class 90-D / 9-logit
+# movement PBML (a class without a loaded model falls back to scripted). The scripted teacher
+# keeps running every subtick either way and is logged as expert_movement_intent.
+AiPlayerbot.MlDuelMovement.Policy = "scripted"
+# Movement-intent Softmax temperature: farm 10; ≤0 ⇒ argmax (demo / freeze).
+AiPlayerbot.MlDuelMovement.SoftmaxTemperature = 10.0
+# Movement-row reward = Phi(now) − Phi(prev logged row) + TerminalLambda * terminal.
+# Potentials in [0,1] (Arms melee ramp / Frost 15-30y LoS trapezoid); 5.0 keeps win/loss dominant.
+AiPlayerbot.MlDuelMovement.TerminalLambda = 5.0
+# Movement CSV cadence: every Nth subtick (5 = the 500ms intent horizon) plus on intent change.
+AiPlayerbot.MlDuelMovement.LogEveryNSubticks = 5
+AiPlayerbot.MlDuelMovement.LogFile = "ml_movement_duel_v1.csv"
+# DEC-039 per-class movement heads (empty ⇒ scripted fallback for that class).
+AiPlayerbot.MlModelPathDuelMovement.Warrior = ""
+AiPlayerbot.MlModelPathDuelMovement.Mage = ""
 
 #
 #

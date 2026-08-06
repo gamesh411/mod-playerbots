@@ -42,6 +42,21 @@ struct MlPendingDecision
     uint8 expertMovementIntent = 0;
 };
 
+// DEC-039 movement-CSV row (ml_movement_duel_v1): buffered per match, terminal backfilled at
+// duel end; reward = Phi(now) - Phi(previous logged row) + TerminalLambda * terminal.
+struct MlMovementPendingRow
+{
+    uint32 matchId = 0;
+    ObjectGuid botGuid;
+    uint8 botClass = 0;
+    uint32 logTimeMs = 0;
+    uint8 intent = 0;
+    uint8 expertIntent = 0;
+    float realizedHeading = 0.0f;
+    float phi = 0.0f;
+    CombatFeatureVector features{};
+};
+
 class MlDecisionLogger
 {
 public:
@@ -57,19 +72,27 @@ public:
     void LogDuelStartSnapshot(Player* bot, uint32 matchId);
     void OnDuelEnd(Player* bot, float terminal);
 
+    // DEC-039: movement-channel row at the 500ms intent horizon (+ intent changes), from the
+    // executor subtick. Role-derived potential is captured here; rewards resolve at duel end.
+    void LogMovementRow(PlayerbotAI* botAI, uint8 intent, uint8 expertIntent, float realizedHeading);
+
 private:
     MlDecisionLogger() = default;
 
     void WriteRow(MlPendingDecision const& d, float reward, float terminal);
     float ComputeReward(PlayerbotAI* botAI, MlPendingDecision const& d) const;
     void FlushMatchDecisions(uint32 matchId, ObjectGuid botGuid, float terminal);
+    void WriteMovementRow(MlMovementPendingRow const& r, float reward, float terminal);
+    void FlushMovementRows(uint32 matchId, ObjectGuid botGuid, float terminal);
 
     std::mutex mtx;
     std::deque<MlPendingDecision> pending;
     std::unordered_map<uint32, std::vector<MlPendingDecision>> matchBuffer;
+    std::unordered_map<uint32, std::vector<MlMovementPendingRow>> movementBuffer;
     std::unordered_map<uint32, uint32> duelMatchByGuid;
     uint64 nextEpisodeId = 1;
     bool headerWritten = false;
+    bool movementHeaderWritten = false;
     // true ⇒ rows include expert_action (duel_v4 / DEC-025). false ⇒ legacy v3 layout.
     bool logExpertAction = true;
     // true ⇒ duel_v5 (DEC-036): movement columns + the full 90-feature vector. When appending

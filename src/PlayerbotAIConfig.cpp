@@ -508,9 +508,23 @@ bool PlayerbotAIConfig::Initialize()
     mlDuelMovementProbeRangeYd = sConfigMgr->GetOption<float>("AiPlayerbot.MlDuelMovement.ProbeRangeYd", 4.0f);
     mlDuelMovementThrottleBroadcast =
         sConfigMgr->GetOption<bool>("AiPlayerbot.MlDuelMovement.ThrottleBroadcast", false);
+    // DEC-039 M1 movement ranker knobs; scripted default keeps the M0 movers authoritative.
+    mlDuelMovementPolicy = sConfigMgr->GetOption<std::string>("AiPlayerbot.MlDuelMovement.Policy", "scripted");
+    mlDuelMovementSoftmaxTemperature =
+        sConfigMgr->GetOption<float>("AiPlayerbot.MlDuelMovement.SoftmaxTemperature", 10.0f);
+    mlDuelMovementTerminalLambda =
+        sConfigMgr->GetOption<float>("AiPlayerbot.MlDuelMovement.TerminalLambda", 5.0f);
+    mlDuelMovementLogEveryNSubticks =
+        sConfigMgr->GetOption<uint32>("AiPlayerbot.MlDuelMovement.LogEveryNSubticks", 5);
+    mlDuelMovementLogFile =
+        sConfigMgr->GetOption<std::string>("AiPlayerbot.MlDuelMovement.LogFile", "ml_movement_duel_v1.csv");
+    mlModelPathDuelMovementWarrior =
+        sConfigMgr->GetOption<std::string>("AiPlayerbot.MlModelPathDuelMovement.Warrior", "");
+    mlModelPathDuelMovementMage = sConfigMgr->GetOption<std::string>("AiPlayerbot.MlModelPathDuelMovement.Mage", "");
     sMlDuelBracket.LoadFromConfig();
     if (!mlModelPathDuel.empty() || !mlModelPathDuelWarrior.empty() || !mlModelPathDuelMage.empty() ||
-        !mlModelPathDuelTeacherWarrior.empty() || !mlModelPathDuelTeacherMage.empty())
+        !mlModelPathDuelTeacherWarrior.empty() || !mlModelPathDuelTeacherMage.empty() ||
+        !mlModelPathDuelMovementWarrior.empty() || !mlModelPathDuelMovementMage.empty())
         sMlScorer.Reload();
 
     useGroundMountAtMinLevel = sConfigMgr->GetOption<int32>("AiPlayerbot.UseGroundMountAtMinLevel", 20);

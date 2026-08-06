@@ -27,6 +27,7 @@ void MlScorer::Reload()
     attemptedLoad = true;
     classModels.clear();
     teacherModels.clear();
+    movementModels.clear();
     fallbackModel = MlMlpModel{};
 
     auto loadClass = [&](uint8 playerClass, std::string const& path, std::unordered_map<uint8, MlMlpModel>& into) {
@@ -41,6 +42,8 @@ void MlScorer::Reload()
     loadClass(CLASS_MAGE, sPlayerbotAIConfig.mlModelPathDuelMage, classModels);
     loadClass(CLASS_WARRIOR, sPlayerbotAIConfig.mlModelPathDuelTeacherWarrior, teacherModels);
     loadClass(CLASS_MAGE, sPlayerbotAIConfig.mlModelPathDuelTeacherMage, teacherModels);
+    loadClass(CLASS_WARRIOR, sPlayerbotAIConfig.mlModelPathDuelMovementWarrior, movementModels);
+    loadClass(CLASS_MAGE, sPlayerbotAIConfig.mlModelPathDuelMovementMage, movementModels);
 
     if (!sPlayerbotAIConfig.mlModelPathDuel.empty())
         fallbackModel.Load(sPlayerbotAIConfig.mlModelPathDuel);
@@ -168,6 +171,34 @@ bool MlScorer::HasMultiLogitFor(uint8 playerClass)
         Reload();
     MlMlpModel const* model = ModelFor(playerClass);
     return model && model->IsMultiLogit();
+}
+
+MlMlpModel const* MlScorer::MovementModelFor(uint8 playerClass) const
+{
+    auto it = movementModels.find(playerClass);
+    if (it != movementModels.end() && it->second.IsLoaded())
+        return &it->second;
+    return nullptr;
+}
+
+bool MlScorer::HasMovementModelFor(uint8 playerClass)
+{
+    if (!attemptedLoad)
+        Reload();
+    return MovementModelFor(playerClass) != nullptr;
+}
+
+bool MlScorer::ScoreMovement(uint8 playerClass, CombatFeatureVector const& features, float* outLogits, size_t outLen)
+{
+    if (!attemptedLoad)
+        Reload();
+
+    MlMlpModel const* model = MovementModelFor(playerClass);
+    // Movement heads are strictly 90-D multi-logit (DEC-039); anything else falls back to scripted.
+    if (!model || !model->IsMultiLogit() || model->InputDim() != ML_MOVE_INPUT_DIM || model->OutputDim() != outLen)
+        return false;
+
+    return model->ForwardMulti(features.data(), features.size(), outLogits, outLen);
 }
 
 bool MlScorer::ScoreSpellbook(PlayerbotAI* botAI, CombatFeatureVector const& features,
