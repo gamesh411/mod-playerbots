@@ -12,7 +12,7 @@
 | **Train** | Reward bootstrap → DAgger×2 → expert-off (aggregate CSVs) |
 | **Freeze gate** | Mixed seats beat stock↔stock by **δ=0.02** — **not met** |
 | **Policy artifact** | `artifacts/duel/s1/warrior.pbml`, `mage.pbml` (round-2; frost PASS / arms FAIL) |
-| **Conf profile** | Deploy keys `MlModelPathDuel.Warrior` / `.Mage`; mixed eval via `-DuelMixedSeat`; full `duel-s1` still [#13](https://github.com/gamesh411/mod-playerbots/issues/13) |
+| **Conf profile** | Deploy keys `MlModelPathDuel.Warrior` / `.Mage`; mixed eval via `-DuelMixedSeat`; stage replay `duel-s1` (**DEC-040**) |
 | **Data tag** | `ml_decisions_duel_v3.csv` + `ml_decisions_duel_v4.csv` |
 | **Git tag** | _none_ (soft-fail; no `stage/s1-…`) |
 | **Status** | **soft-fail** ([#18](https://github.com/gamesh411/mod-playerbots/issues/18) closed via **DEC-028**). Pivot to S2 execute. |

@@ -9,7 +9,7 @@
 | **Movement** | Scripted (Arms charge/reach melee; Frost flee/blink) — Softmax combat-only; empty → stock Peek |
 | **τ** | Farm **10**; demo/freeze **0** (argmax); conf `MlDuelBracket.SoftmaxTemperature` |
 | **Policy artifact** | _TBD (stock+softmax sentinel / no PBML)_ |
-| **Conf profile** | _TBD `duel-s0`_ |
+| **Conf profile** | Stage replay `duel-s0` (**DEC-040**); freeze fields still TBD |
 | **Data tag** | _TBD_ |
 | **Git tag** | _TBD `stage/s0-…`_ |
 | **Status** | not frozen |

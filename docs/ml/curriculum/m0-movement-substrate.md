@@ -11,7 +11,7 @@
 | **Conf** | `AiPlayerbot.MlDuelMovement.{Enable=0, SubtickMs=100, ProbeRangeYd=4, ThrottleBroadcast=0}`; orchestrator `duel-farm` profile flips `Enable=1` and `ThrottleBroadcast=1` |
 | **Throughput gate** | **84.2 % — waived (DEC-038)**: movement 1,277 vs control 1,516 matches / 20 min (3,831 vs 4,548 duels/hour), fresh-park protocol, DEC-037 rules; movement duels 32 % shorter, server ~16 % of one core |
 | **Policy artifact** | code+conf sentinel (no PBML) |
-| **Conf profile** | `duel-farm` + `MlDuelMovement.Enable=1` (stage-replay `duel-m0` pending #13) |
+| **Conf profile** | `duel-farm` + `MlDuelMovement.Enable=1`; stage replay `duel-m0` (**DEC-040**) |
 | **Data tag** | `ml_decisions_duel_v5+90d` |
 | **Git tag** | `stage/m0-packet-executor` |
 | **Manifest path** | `artifacts/duel/m0/manifest.json` |
