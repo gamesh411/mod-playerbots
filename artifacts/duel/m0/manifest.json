@@ -1,0 +1,30 @@
+{
+  "stage": "m0",
+  "git_tag": "stage/m0-packet-executor",
+  "git_sha": "see tag: freeze commit on exp/duel-rl-curriculum (code landed 6559d34a..da2f7ffe)",
+  "policy": {
+    "kind": "code+conf-sentinel",
+    "ability_head": "softmax-stock over scripted queue (S0 sentinel, DEC-022)",
+    "movement": "packet executor + scripted intent movers (DEC-036)"
+  },
+  "conf_profile": "duel-farm + AiPlayerbot.MlDuelMovement.Enable=1 (ThrottleBroadcast=1)",
+  "data_tag": "ml_decisions_duel_v5+90d",
+  "stage_card": "docs/ml/curriculum/m0-movement-substrate.md",
+  "frozen_at": "2026-08-06",
+  "core_patch": "azerothcore Playerbot branch d5b4e6346 (bot movement-validation bypass, MOD_PLAYERBOTS)",
+  "throughput_gate": {
+    "result": "84.2% - waived (DEC-038)",
+    "movement_matches_20min": 1277,
+    "control_matches_20min": 1516,
+    "protocol": "fresh park DB reset + restart + 10min stabilization + 20min window, DEC-037 rules, same binary",
+    "csv_control": "ml_decisions_duel_v5_m0control6.csv",
+    "csv_movement": "ml_decisions_duel_v5_m0move7.csv"
+  },
+  "behavior": {
+    "mage_intents": {"away": 0.87, "hold": 0.098, "toward": 0.033},
+    "warrior_intents": {"hold": 0.805, "toward": 0.195},
+    "expert_agreement": 1.0,
+    "mean_duel_s": {"movement": 48.2, "control": 70.5}
+  },
+  "notes": "Opens eval epoch 2 (DEC-035/036): S-track evals comparable only intra-epoch. DEC-037 (fair rematch) and the DEC-038 farm-cycle overhaul landed during this execute."
+}
