@@ -529,7 +529,7 @@ void MlDuelMovement::ContinueJump(Player* bot, MlBotMovementState& state, uint32
 
 void MlDuelMovement::StartJumpTurn(Player* bot, MlBotMovementState& state, float /*newFacing*/)
 {
-    if (state.airborne || !state.moving)
+    if (state.airborne || !state.moving || bot->IsRooted() || bot->HasUnitState(UNIT_STATE_ROOT))
         return;
 
     float const dir = bot->GetOrientation();
@@ -552,6 +552,12 @@ void MlDuelMovement::StartJumpTurn(Player* bot, MlBotMovementState& state, float
 bool MlDuelMovement::HandleExternalFacing(Player* bot, WorldObject* target)
 {
     if (!bot || !target || !IsActiveFor(bot) || target != bot->duel->Opponent)
+        return false;
+
+    // Rooted units must never emit jump packets or movement-flag broadcasts: observers hold
+    // the unit rooted, and contradictory movement wedges real clients (root-flag heartbeat
+    // spam in the server log was this path). The legacy instant turn handles facing.
+    if (bot->IsRooted() || bot->HasUnitState(UNIT_STATE_ROOT))
         return false;
 
     MlBotMovementState* state = GetState(bot->GetGUID(), false);
