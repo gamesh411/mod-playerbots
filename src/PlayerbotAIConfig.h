@@ -365,6 +365,15 @@ public:
     uint32 mlDuelBracketRematchCooldownMs;
     // When true, RestoreForRematch also clears spell cooldowns (default off).
     bool mlDuelBracketResetCooldownsOnDuelEnd;
+    // DEC-044: dismiss a surviving pet on duel-end restore and suppress the scripted between-duel
+    // re-summon, so every duel opens pet-down and the summon decision is actually taken. A carried
+    // over pet is stale state exactly like banked rage (DEC-037 family). Off for frozen-stage
+    // replays, which must keep their certified-era world.
+    bool mlDuelBracketPetReset;
+    // DEC-044: share of farm mage seats whose Glyph of Eternal Water is stripped at kit init
+    // (deterministic by bot guid), so mid-duel elemental expiry appears organically in the data.
+    // Gate, demo, and replay runs stay on the canonical glyphed kit (0).
+    float mlDuelUnglyphedMageShare;
     // DEC-036 M0 movement channel: packet-driven intent executor + scripted intent movers.
     bool mlDuelMovementEnable;
     uint32 mlDuelMovementSubtickMs;

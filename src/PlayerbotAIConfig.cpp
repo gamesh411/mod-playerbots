@@ -480,6 +480,10 @@ bool PlayerbotAIConfig::Initialize()
     // DEC-037: fair rematches — default on (all CDs cleared alongside the rage/RP zeroing).
     mlDuelBracketResetCooldownsOnDuelEnd =
         sConfigMgr->GetOption<bool>("AiPlayerbot.MlDuelBracket.ResetCooldownsOnDuelEnd", true);
+    // DEC-044: pet-down coverage for the M2 farm; off by default so frozen-stage replays keep
+    // their certified-era world.
+    mlDuelBracketPetReset = sConfigMgr->GetOption<bool>("AiPlayerbot.MlDuelBracket.PetReset", false);
+    mlDuelUnglyphedMageShare = sConfigMgr->GetOption<float>("AiPlayerbot.MlDuelBracket.UnglyphedMageShare", 0.0f);
     // DEC-036 M0 movement channel; the orchestrator duel-farm profile flips Enable.
     mlDuelMovementEnable = sConfigMgr->GetOption<bool>("AiPlayerbot.MlDuelMovement.Enable", false);
     mlDuelMovementSubtickMs = sConfigMgr->GetOption<uint32>("AiPlayerbot.MlDuelMovement.SubtickMs", 100);

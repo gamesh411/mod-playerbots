@@ -9,13 +9,14 @@
 5. **Heuristics may use features; features must not depend on MLP output** — no feedback loops in the vector.
 6. **Document before merging code** — add a row here, then implement.
 
-Schema / PBML input today: `ML_INPUT_DIM = CF_FEATURE_COUNT + AF_COUNT + AF_ID_COUNT` (**70 + 8 + 4 = 82**).  
-Pre-action-id duel PBML (**78**) still loads; same-flag actions (e.g. frostbolt vs fireball) are indistinguishable without the id pack.  
+Schema / PBML input today: `ML_INPUT_DIM = CF_FEATURE_COUNT + AF_COUNT + AF_ID_COUNT` (**112 + 8 + 4 = 124**), the state having grown to 112 at M2 execute (#28, DEC-043) with CF_PET 90-99 and CF_FORM 100-111.  
+Frozen M1 movement heads keep their 90-D input via the stable prefix slice `state[0..89]` (`ML_MOVE_INPUT_DIM`); packs only ever append, so that prefix never moves.  
+Frozen S-track ability heads keep loading at their trained widths — **82** (`ML_INPUT_DIM_LEGACY`) and the pre-action-id **78** — against the 70-feature slice they were trained on (`CF_LEGACY_ABILITY_FEATURE_COUNT`); a PBML's input width is what selects its layout, so the `duel-s1` / `duel-s2` replay profiles score exactly as certified. Without the id pack, same-flag actions (frostbolt vs fireball) stay indistinguishable.  
 Legacy PBML1 still supported at inference via `ML_INPUT_DIM_V1 = 20` (core[0..11] + action flags only).
 
-At M2 execute (#28, DEC-043) the state grows to **112** (CF_PET 90-99 + CF_FORM 100-111) and the ability head to `ML_INPUT_DIM = 112 + 8 + 4 = 124`; frozen M1 movement heads keep their 90-D input via the stable prefix slice `state[0..89]`.
+Multi-logit heads (S2 / M2 spellbook, M1 movement) are state-only — the action is the output — so their input width is the bare feature count, **112** for a duel_v6 M2 head.
 
-Duel logfile for this layout: `ml_decisions_duel_v2.csv`.
+Duel logfile for this layout: `ml_decisions_duel_v6.csv`.
 
 **Omniscience note:** foe CD / DR / spec / power are read from the live `Player*` on this private server (training signal). A human client would not see all of that; difficulty dial (D7) can later mask packs to simulate imperfect information.
 
@@ -112,8 +113,7 @@ Remaining DR effectiveness: level1→`1`, level2→`0.5`, level3→`0.25`, immun
 ## Pack: CF_MOVE (70–89) — shipped (DEC-036 / M0 execute)
 
 All angles foe-bearing-relative (matching the 9-way intent vocabulary); speeds normalized to base run speed.
-Movement-head PBML input = **90** (state only, no action-flag / action-id packs).
-Ability-head `ML_INPUT_DIM` (82) unchanged.
+Movement-head PBML input = **90** (state only, no action-flag / action-id packs), pinned to this prefix for good by DEC-043.
 Duel logfile for this layout: `ml_decisions_duel_v5.csv`.
 
 | Index | Name | Meaning |
@@ -136,7 +136,7 @@ Log-only columns riding `duel_v5`: `realized_heading` (continuous heading actual
 
 ---
 
-## Pack: CF_PET (90-99) - decided (DEC-043), lands at M2 execute #28
+## Pack: CF_PET (90-99) - shipped (DEC-043 / M2 execute #28)
 
 Role-based and self/foe symmetric, like DuelCD: role membership comes from per-class spell lists in `CombatDecisionFeatures.cpp`.
 Non-autocast **command** spells only (DEC-032 autocast exclusion); autocast repeats are the pet AI's job, not state.
@@ -154,7 +154,7 @@ Duel logfile from this layout on: `ml_decisions_duel_v6.csv`.
 
 ---
 
-## Pack: CF_FORM (100-111) - decided (DEC-043), lands at M2 execute #28
+## Pack: CF_FORM (100-111) - shipped (DEC-043 / M2 execute #28)
 
 Class-relative one-hot (spec-tab idiom); all-zeros = base/no form.
 Unlocks the DEC-034 revisit: warrior stances re-enter the M2 head with same-form re-picks masked (DEC-043).

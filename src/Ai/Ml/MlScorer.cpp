@@ -77,6 +77,17 @@ MlMlpModel const* MlScorer::TeacherFor(uint8 playerClass) const
     return nullptr;
 }
 
+size_t MlScorer::AbilityFeatureSliceFor(size_t inputDim)
+{
+    // A PBML's input width tells us which state layout it was trained on: the frozen S-track
+    // heads saw the 70-D pre-movement slice, duel_v6 heads see the whole vector (DEC-043).
+    // ML_INPUT_DIM is the scalar head, bare CF_FEATURE_COUNT the state-only multi-logit head.
+    // Anything else is rejected upstream, so the legacy slice is the safe default.
+    if (inputDim == ML_INPUT_DIM || inputDim == CF_FEATURE_COUNT)
+        return CF_FEATURE_COUNT;
+    return CF_LEGACY_ABILITY_FEATURE_COUNT;
+}
+
 void MlScorer::BuildInput(CombatFeatureVector const& features, std::string const& actionName, float* out) const
 {
     BuildInputForDim(features, actionName, out, ML_INPUT_DIM);
@@ -100,23 +111,23 @@ void MlScorer::BuildInputForDim(CombatFeatureVector const& features, std::string
     for (size_t i = 0; i < outDim; ++i)
         out[i] = 0.0f;
 
-    // Ability heads consume only the 70-feature slice; CF_MOVE never leaks in (DEC-036).
-    size_t nFeat = (std::min)(static_cast<size_t>(CF_ABILITY_FEATURE_COUNT), outDim);
+    size_t const featureSlice = MlScorer::AbilityFeatureSliceFor(outDim);
+    size_t nFeat = (std::min)(featureSlice, outDim);
     for (size_t i = 0; i < nFeat; ++i)
         out[i] = features[i];
 
-    if (outDim >= CF_ABILITY_FEATURE_COUNT + AF_COUNT)
+    if (outDim >= featureSlice + AF_COUNT)
     {
         for (size_t i = 0; i < AF_COUNT; ++i)
-            out[CF_ABILITY_FEATURE_COUNT + i] = flags[i];
+            out[featureSlice + i] = flags[i];
     }
 
-    if (outDim >= CF_ABILITY_FEATURE_COUNT + AF_COUNT + AF_ID_COUNT)
+    if (outDim >= featureSlice + AF_COUNT + AF_ID_COUNT)
     {
         float actionId[AF_ID_COUNT];
         HeuristicScores::FillActionIdFeatures(actionName, actionId);
         for (size_t i = 0; i < AF_ID_COUNT; ++i)
-            out[CF_ABILITY_FEATURE_COUNT + AF_COUNT + i] = actionId[i];
+            out[featureSlice + AF_COUNT + i] = actionId[i];
     }
 }
 
@@ -126,7 +137,8 @@ float MlScorer::ScoreWithModel(MlMlpModel const* model, Action* action, CombatFe
         return 0.0f;
 
     size_t dim = model->InputDim();
-    if (dim != ML_INPUT_DIM && dim != ML_INPUT_DIM_NO_ACTION_ID && dim != ML_INPUT_DIM_V1)
+    if (dim != ML_INPUT_DIM && dim != ML_INPUT_DIM_LEGACY && dim != ML_INPUT_DIM_LEGACY_NO_ACTION_ID &&
+        dim != ML_INPUT_DIM_V1)
         return 0.0f;
     if (model->IsMultiLogit())
         return 0.0f;
@@ -215,12 +227,15 @@ bool MlScorer::ScoreSpellbook(PlayerbotAI* botAI, CombatFeatureVector const& fea
     if (!model || !model->IsMultiLogit())
         return false;
 
+    // Multi-logit heads are state-only (the action is the output), so the bare feature widths are
+    // the trained shapes; the flag-carrying widths stay accepted and simply keep those inputs zero.
     size_t const dim = model->InputDim();
-    if (dim != CF_ABILITY_FEATURE_COUNT && dim != ML_INPUT_DIM_NO_ACTION_ID && dim != ML_INPUT_DIM)
+    if (dim != CF_FEATURE_COUNT && dim != CF_LEGACY_ABILITY_FEATURE_COUNT && dim != ML_INPUT_DIM &&
+        dim != ML_INPUT_DIM_LEGACY && dim != ML_INPUT_DIM_LEGACY_NO_ACTION_ID)
         return false;
 
     std::vector<float> input(dim, 0.0f);
-    size_t nFeat = (std::min)(static_cast<size_t>(CF_ABILITY_FEATURE_COUNT), dim);
+    size_t nFeat = (std::min)(AbilityFeatureSliceFor(dim), dim);
     for (size_t i = 0; i < nFeat; ++i)
         input[i] = features[i];
 

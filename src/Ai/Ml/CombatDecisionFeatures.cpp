@@ -13,6 +13,7 @@
 
 #include "AiFactory.h"
 #include "MlDuelMovement.h"
+#include "Pet.h"
 #include "Player.h"
 #include "Playerbots.h"
 #include "ServerFacade.h"
@@ -241,6 +242,152 @@ void FillRoleCds(Player* player, float& kick, float& defensive, float& offensive
         default:
             break;
     }
+}
+
+// Class-relative form slot (0..CF_FORM_SLOTS-1), or -1 for base form / unmapped.
+// Extending a class means appending to its case, never renumbering an existing slot.
+int FormSlot(uint8 cls, ShapeshiftForm form)
+{
+    switch (cls)
+    {
+        case CLASS_WARRIOR:
+            switch (form)
+            {
+                case FORM_BATTLESTANCE:
+                    return 0;
+                case FORM_DEFENSIVESTANCE:
+                    return 1;
+                case FORM_BERSERKERSTANCE:
+                    return 2;
+                default:
+                    return -1;
+            }
+        case CLASS_DRUID:
+            switch (form)
+            {
+                case FORM_BEAR:
+                case FORM_DIREBEAR:
+                    return 0;
+                case FORM_CAT:
+                    return 1;
+                case FORM_MOONKIN:
+                    return 2;
+                case FORM_TREE:
+                    return 3;
+                case FORM_TRAVEL:
+                    return 4;
+                default:
+                    return -1;
+            }
+        case CLASS_PRIEST:
+            return form == FORM_SHADOW ? 0 : -1;
+        case CLASS_SHAMAN:
+            return form == FORM_GHOSTWOLF ? 0 : -1;
+        default:
+            return -1;
+    }
+}
+
+void FillFormOneHot(Unit* unit, float* out)
+{
+    for (size_t i = 0; i < CF_FORM_SLOTS; ++i)
+        out[i] = 0.0f;
+    if (!unit)
+        return;
+    int slot = FormSlot(unit->getClass(), unit->GetShapeshiftForm());
+    if (slot >= 0)
+        out[slot] = 1.0f;
+}
+
+// Pet spell knowledge lives on the pet, not the owner: the mage never knows Freeze 33395, the
+// elemental does - and the temporary elemental's PetSpellMap never learns its command spells
+// either, so the creature template is the second source. Mirrors GuardianKnowsSpell in
+// PlayerbotAI.cpp, which is file-local there.
+bool GuardianKnowsSpell(Guardian* pet, uint32 spellId)
+{
+    if (pet->HasSpell(spellId))
+        return true;
+    for (uint8 i = 0; i < MAX_CREATURE_SPELLS; ++i)
+        if (pet->m_spells[i] == spellId)
+            return true;
+    return false;
+}
+
+// DuelCD convention on the pet's own cooldown map: 1 = known and off CD, 0 = on CD or unknown.
+float AnyPetSpellReady(Guardian* pet, std::initializer_list<uint32> spellIds)
+{
+    if (!pet)
+        return 0.0f;
+    Creature const* creaturePet = pet->ToCreature();
+    for (uint32 id : spellIds)
+    {
+        if (!GuardianKnowsSpell(pet, id))
+            continue;
+        if (!creaturePet || !creaturePet->HasSpellCooldown(id))
+            return 1.0f;
+    }
+    return 0.0f;
+}
+
+// Pet command-spell roles (DEC-043). Non-autocast command spells only: an autocast spell is pet
+// AI repeating itself, not a decision the head can own (DEC-032). Empty roles are the honest
+// answer for classes whose pet carries no such spell - extend the case when one arrives.
+void FillPetRoleCds(Player* owner, Guardian* pet, float& kick, float& cc, float& utility)
+{
+    kick = cc = utility = 0.0f;
+    if (!owner || !pet)
+        return;
+
+    switch (owner->getClass())
+    {
+        case CLASS_MAGE:
+            cc = AnyPetSpellReady(pet, {33395});  // Water Elemental Freeze
+            break;
+        case CLASS_WARLOCK:
+            kick = AnyPetSpellReady(pet, {19647});     // Felhunter Spell Lock
+            cc = AnyPetSpellReady(pet, {6358});        // Succubus Seduction
+            utility = AnyPetSpellReady(pet, {19505});  // Felhunter Devour Magic
+            break;
+        case CLASS_DEATH_KNIGHT:
+            cc = AnyPetSpellReady(pet, {47481});  // Ghoul Gnaw
+            break;
+        default:
+            break;
+    }
+}
+
+// Count of live controlled minions, scaled like CF_ATTACKER_COUNT so multi-pet classes
+// (feral spirits, Army of the Dead) stay on the same axis as a single elemental.
+float PetCountFrac(Unit* unit)
+{
+    if (!unit)
+        return 0.0f;
+    uint32 alive = 0;
+    for (Unit* controlled : unit->m_Controlled)
+        if (controlled && controlled->IsAlive())
+            ++alive;
+    return std::min(1.0f, alive / 5.0f);
+}
+
+void FillPetPack(Player* player, CombatFeatureVector& features, size_t base)
+{
+    if (!player)
+        return;
+
+    features[base] = PetCountFrac(player);
+
+    Guardian* pet = player->GetGuardianPet();
+    if (!pet || !pet->IsAlive())
+        return;
+
+    uint32 const maxHealth = pet->GetMaxHealth();
+    features[base + 1] = maxHealth ? static_cast<float>(pet->GetHealth()) / static_cast<float>(maxHealth) : 0.0f;
+
+    float kick, cc, utility;
+    FillPetRoleCds(player, pet, kick, cc, utility);
+    features[base + 2] = kick;
+    features[base + 3] = cc;
+    features[base + 4] = utility;
 }
 }  // namespace
 
@@ -485,6 +632,22 @@ CombatFeatureVector CombatDecisionFeaturesValue::Calculate()
         sMlDuelMovement.GetProbes(bot, foe, probes);
         for (int k = 0; k < 8; ++k)
             features[CF_MOVE_PROBE_N + k] = probes[k];
+    }
+
+    // --- Pack CF_PET (DEC-043) ---
+    FillPetPack(bot, features, CF_SELF_PET_COUNT);
+    FillPetPack(foe ? foe->ToPlayer() : nullptr, features, CF_FOE_PET_COUNT);
+
+    // --- Pack CF_FORM (DEC-043) ---
+    {
+        float form[CF_FORM_SLOTS];
+        FillFormOneHot(bot, form);
+        for (size_t i = 0; i < CF_FORM_SLOTS; ++i)
+            features[CF_SELF_FORM_0 + i] = form[i];
+
+        FillFormOneHot(foe, form);
+        for (size_t i = 0; i < CF_FORM_SLOTS; ++i)
+            features[CF_FOE_FORM_0 + i] = form[i];
     }
 
     return features;

@@ -824,6 +824,7 @@ void PlayerbotFactory::Randomize(bool incremental)
 
     LOG_DEBUG("playerbots", "Initializing glyphs...");
     InitGlyphs();
+    sMlDuelBracket.ApplyUnglyphedMageShare(bot);
     // bot->SaveToDB(false, false);
 
     pmo = sPerfMonitor.start(PERF_MON_RNDBOT, "PlayerbotFactory_Guilds");
