@@ -613,3 +613,33 @@ Fresh epoch-2 M0<->M0 baseline: warrior 39.3% / mage 61.5% (2.7k matches, abilit
 - The mage uplift is corroborated by movement-quality metrics, not just WR.
 
 **Consequences:** freeze executed per DEC-019 (`stage/m1-movement-ranker`, manifest, stage card `m1-movement-ranker.md`, `duel-m1` replay profile in the orchestrator). Eval epoch 2 continues. #24 (M2 charting) unblocks; #25/#26 return to the frontier. Executor fidelity fixes landed during this execute (navmesh-validated probes/steps, dead-bot flag hygiene, rooted-unit packet guards) apply from `0508663c`/`faaf3687` onward; client-freeze investigation split out to [#27](https://github.com/gamesh411/mod-playerbots/issues/27).
+
+### DEC-042 - 2026-08-07 - M2 design: ability-head co-adaptation on the movement-active world
+
+**Status:** accepted  
+**Context:** [#24](https://github.com/gamesh411/mod-playerbots/issues/24) M2 charting, unblocked by the M1 freeze (DEC-041).
+The frozen S-track ability heads learned spell values against a statue-movement world; M2 retrains the ability head on movement-active farm data (frozen M1 movement in both seats), on the feature vector the movement era finally provides.
+
+**Decision:**
+
+| Piece | Rule |
+|------|------|
+| Head | S2-style spellbook multi-logit head (DEC-026 arch), trained fresh - no warm start from dec033r3. Vocab rebuilt from movement-active data; DEC-030/031/032 masks carry forward; DEC-034 stance exclusion revisited only if [#25](https://github.com/gamesh411/mod-playerbots/issues/25) adds a form feature. |
+| Features | Full movement-era vector: duel_v5's 90-D (CF_MOVE 70-89 included - the ability head sees range/heading/band state) plus whatever [#25](https://github.com/gamesh411/mod-playerbots/issues/25)/[#26](https://github.com/gamesh411/mod-playerbots/issues/26) add. New CSV rev `duel_v6` (`ml_decisions_duel_v6.csv`). |
+| Sequencing | M2 execute is blocked by #25 and #26: vector and vocab are final before the farm spins, so the stage trains once. |
+| Recipe | One BC bootstrap round on `expert_action` (stock rotation tau=0) purely to initialize - a fresh multi-logit head sampling at tau=10 would be uniform-random spellbook play, the archived prior-art baseline. Then the DEC-033 exploration-first + win-anchored retrain loop, with no teacher anywhere after round 0. |
+| Loop discipline | Sqrt label balance; offline degeneracy gate (state-conditional argmax) before every deploy; anti-thrash budget 2 rounds beyond the recipe, then a waiver/pivot DEC (DEC-039 discipline). |
+| Capacity | Hidden 128 vs 256 sweep at the bootstrap round, picked by holdout CE + teacher agreement; the winner is fixed for the whole loop and recorded in the execute ticket. |
+| Farm world | Frozen M1 canonical movement heads in both seats at movement tau=10 during farm (state diversity - user call over the tau=0 deployment-distribution default); all eval and gate runs at movement tau=0. |
+| Alternation depth | 1 - ability retrain only. A movement re-adaptation round against the new ability world is the natural M3 candidate if the gate passes and movement-quality metrics shift; it is not part of M2. |
+| Freeze gate | Both-seat WR uplift, delta = 0.02, vs a fresh S0-sentinel+M1-movement baseline (stock abilities on the identical movement world): epoch 2, DEC-037 rules, mixed-seat protocol, >= 2.4k matches per run, tau=0 both channels. dec033r3+M1 and dec033r3+M0 run once as report-only showcase rows in the stage card, not gate conditions. |
+| Freeze contract | DEC-019 as usual: tag `stage/m2-<slug>`, `artifacts/duel/m2/{warrior,mage}.pbml` + snapshots + manifest, stage card, `duel-m2` replay-profile row (DEC-040 extension), data tag `duel_v6`. Soft-fail per DEC-028/035 precedent: record the miss, freeze the best certified artifact, no stage tag. |
+
+**Why:**
+- The spellbook head is the curriculum destination; retreating to the queue vocab would abandon it, and warm-starting imports exactly the statue-world value estimates M2 exists to shed.
+- DEC-033's plateau was diagnosed as feature starvation (DEC-035); movement-active data plus the movement block gives the outcome-anchored loop its fair test, rather than re-running the teacher-imitation shape that also soft-failed.
+- The BC bootstrap keeps the stock teacher out of the loop while avoiding the known-bad uniform-random cold start.
+- Gating only against S0+M1 keeps the gate single and sharp: beating the stock rotation on the movement world is the claim the S-track never certified; beating a mis-calibrated statue head is near-certain and proves little.
+
+**Consequences:** #24 closes; an Execute M2 ticket is created blocked by #25/#26, which return to the live frontier as M2 prerequisites.
+Epoch-1 and superseded farm CSVs archived to `C:\AzerothCore-server\archive\csv-epoch1-stale-20260807.tar.gz` (48 files, 202M compressed, ~1.7G reclaimed); live and freeze-referenced CSVs untouched.
