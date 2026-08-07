@@ -69,6 +69,13 @@ public:
     void TeleportToPad(Player* bot, Position* outDest = nullptr);
     void EnsureUnmounted(Player* bot);
 
+    // DEC-044: true while the scripted between-duel re-summon must stay suppressed, so every duel
+    // opens pet-down and the head actually faces the summon decision.
+    bool SuppressesScriptedSummon(Player* bot) const;
+    // DEC-044: strip Glyph of Eternal Water from the configured share of farm mage seats
+    // (deterministic by bot guid) at kit init, for organic mid-duel elemental expiry.
+    void ApplyUnglyphedMageShare(Player* bot) const;
+
     // Concurrent duel farm metrics (for PrintStats / saturation tuning).
     uint32 GetTrackedMatchCount() const;
     uint32 GetWaitingCount() const;
@@ -110,6 +117,9 @@ private:
     uint32 maxMatchRange = 80;
     uint32 rematchCooldownMs = 500;
     bool resetCooldownsOnDuelEnd = false;
+    // DEC-044 pet-down coverage: dismiss on restore + suppress the scripted re-summon.
+    bool petReset = false;
+    float unglyphedMageShare = 0.f;
     // Yard radius for idle wander around the park center (clamped by maxMatchRange).
     float parkWanderRadius = 35.f;
     // Max distance to cast duel request; farther pairs walk together first.

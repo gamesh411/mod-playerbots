@@ -83,6 +83,8 @@ void MlDuelBracket::LoadFromConfig()
     maxMatchRange = sPlayerbotAIConfig.mlDuelBracketMaxMatchRange;
     rematchCooldownMs = sPlayerbotAIConfig.mlDuelBracketRematchCooldownMs;
     resetCooldownsOnDuelEnd = sPlayerbotAIConfig.mlDuelBracketResetCooldownsOnDuelEnd;
+    petReset = sPlayerbotAIConfig.mlDuelBracketPetReset;
+    unglyphedMageShare = std::clamp(sPlayerbotAIConfig.mlDuelUnglyphedMageShare, 0.f, 1.f);
 
     if (!ParsePairs(sPlayerbotAIConfig.mlDuelBracketPairs))
     {
@@ -471,6 +473,13 @@ void MlDuelBracket::RestoreForRematch(Player* bot)
     if (resetCooldownsOnDuelEnd)
         bot->RemoveAllSpellCooldown();
 
+    // DEC-044: a pet that survived the last duel is carried-over state exactly like banked rage
+    // (DEC-037 family). Dismissing here - with the scripted re-summon suppressed until the next
+    // duel starts - is what makes every duel open pet-down, so the summon decision is taken on
+    // the clock rather than inherited from the rematch gap.
+    if (petReset)
+        bot->RemoveAllControlled();
+
     // Clear eat/drink (and sit) so rematch is not blocked by regen auras.
     bot->RemoveAurasWithInterruptFlags(AURA_INTERRUPT_FLAG_NOT_SEATED);
     if (bot->IsSitState())
@@ -479,6 +488,43 @@ void MlDuelBracket::RestoreForRematch(Player* bot)
     // Lingering combat after a duel blocks rematch / new duel requests.
     if (bot->IsInCombat())
         bot->CombatStop(true);
+}
+
+bool MlDuelBracket::SuppressesScriptedSummon(Player* bot) const
+{
+    // Only outside a duel: once the duel is live the head owns the summon, and the scripted
+    // rotation is not driving anyway.
+    return enabled && petReset && bot && !bot->duel && IsBotEligibleSpec(bot);
+}
+
+void MlDuelBracket::ApplyUnglyphedMageShare(Player* bot) const
+{
+    if (!enabled || unglyphedMageShare <= 0.f || !bot || bot->getClass() != CLASS_MAGE)
+        return;
+
+    // Deterministic by guid so a seat keeps the same kit across reinitialisations - a bot that
+    // flipped kit between duels would smear the two distributions together.
+    uint32 const guid = bot->GetGUID().GetCounter();
+    if (static_cast<float>(guid % 100) >= unglyphedMageShare * 100.f)
+        return;
+
+    // Glyph of Eternal Water (glyph 696 / spell 63090) makes the elemental permanent; without it
+    // the 45s summon expires mid-duel, which is the state this share exists to produce.
+    constexpr uint32 GLYPH_ETERNAL_WATER_SPELL = 63090;
+    for (uint8 slot = 0; slot < MAX_GLYPH_SLOT_INDEX; ++slot)
+    {
+        uint32 const glyphId = bot->GetGlyph(slot);
+        if (!glyphId)
+            continue;
+        GlyphPropertiesEntry const* entry = sGlyphPropertiesStore.LookupEntry(glyphId);
+        if (!entry || entry->SpellId != GLYPH_ETERNAL_WATER_SPELL)
+            continue;
+
+        bot->RemoveAurasDueToSpell(entry->SpellId);
+        bot->SetGlyph(slot, 0, true);
+        bot->SendTalentsInfoData(false);
+        return;
+    }
 }
 
 bool MlDuelBracket::IsBracketCandidate(Player* bot, PlayerbotAI* botAI) const

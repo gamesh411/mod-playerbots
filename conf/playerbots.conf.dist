@@ -2543,8 +2543,9 @@ AiPlayerbot.MlModelPathDuelTeacher.Mage = ""
 AiPlayerbot.MlDuelBracket.Enabled = 0
 # Class:specTab pairs, comma-separated. Default: Arms Warrior versus Frost Mage.
 AiPlayerbot.MlDuelBracket.Pairs = "1:0-8:2"
-# Fresh farms: v5 adds CF_MOVE features + movement intent columns (DEC-036). Rotate when schema changes.
-AiPlayerbot.MlDuelBracket.LogFile = "ml_decisions_duel_v5.csv"
+# Fresh farms: v6 adds CF_PET + CF_FORM features (DEC-043) on top of v5's movement columns.
+# Rotate when the schema changes; appending to an older file keeps that file's narrower layout.
+AiPlayerbot.MlDuelBracket.LogFile = "ml_decisions_duel_v6.csv"
 # random | softmax-stock | heuristic | ranker (DEC-018 / DEC-022 / DEC-025).
 AiPlayerbot.MlDuelBracket.ActionPolicy = "softmax-stock"
 # queue | spellbook | union. Spellbook/union: random pool, or ranker multi-logit (DEC-026 S2).
@@ -2567,6 +2568,15 @@ AiPlayerbot.MlDuelBracket.RematchCooldownMs = 500
 # When 1, clear all spell cooldowns on duel-end restore (DEC-037 fair rematch). Default 1.
 # Duel-end restore also zeroes Rage / Runic Power so build-up classes cannot bank an opener.
 AiPlayerbot.MlDuelBracket.ResetCooldownsOnDuelEnd = 1
+# DEC-044 pet-down coverage. When 1, duel-end restore dismisses surviving pets and the scripted
+# between-duel re-summon is suppressed, so every duel opens pet-down and the summon is a decision
+# the head takes on the clock. Leave 0 for frozen-stage replays (duel-s0..duel-m1), which must
+# keep their certified-era world; the duel-farm and duel-m2 profiles turn it on.
+AiPlayerbot.MlDuelBracket.PetReset = 0
+# DEC-044: share (0..1) of farm mage seats that duel without Glyph of Eternal Water, deterministic
+# by bot guid, so the 45s elemental expires mid-duel and pet-down states appear organically.
+# Gate, demo, and replay runs stay on the canonical glyphed kit (0).
+AiPlayerbot.MlDuelBracket.UnglyphedMageShare = 0.0
 # reward = short_reward + TerminalLambda * terminal; keep terminal dominant.
 AiPlayerbot.MlDuelBracket.TerminalLambda = 25.0
 

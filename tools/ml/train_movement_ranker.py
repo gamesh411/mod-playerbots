@@ -28,6 +28,8 @@ import numpy as np
 
 from train_spellbook_ranker import train_ce, write_pbml_multi
 
+# DEC-043 prefix slice: the movement head stays 90-D however wide the CSV grows, so the frozen M1
+# artifacts keep loading unchanged. duel_v6 movement CSVs log 112 columns; f0..f89 is this pack.
 MOVE_FEATURES = 90
 N_INTENTS = 9
 HOLDOUT_MOD = 10

@@ -18,6 +18,7 @@ from __future__ import annotations
 import argparse
 import csv
 import math
+import re
 from pathlib import Path
 
 import numpy as np
@@ -32,12 +33,26 @@ from train_ranker import (
     is_meta_action,
 )
 
-FEATURE_DIM = 70
+# Feature width of the pre-movement CSVs (duel_v3/v4). Headed files carry their own width in
+# f0..fN instead: duel_v5 is 90, duel_v6 (DEC-043, CF_PET + CF_FORM) is 112. The head's input_dim
+# follows the data, so a duel_v6 farm trains a 112-D M2 head with no zero-fill (DEC-042/043).
+LEGACY_FEATURE_DIM = 70
 HIDDEN = 64
 
 
 def _is_spell_id(s: str) -> bool:
     return bool(s) and s.isdigit()
+
+
+def _header_feature_dim(fieldnames: list[str]) -> int:
+    n = 0
+    for name in fieldnames or []:
+        m = re.fullmatch(r"f(\d+)", name)
+        if m:
+            n = max(n, int(m.group(1)) + 1)
+    if not n:
+        raise SystemExit("CSV has no f0..fN feature columns")
+    return n
 
 
 def load_spellbook_rows(
@@ -48,12 +63,13 @@ def load_spellbook_rows(
     drop_duel_noise: bool,
     max_rows: int,
 ):
-    """Return (X[n,70], action_ids[n], expert_ids[n] or -1, won[n])."""
+    """Return (X[n,d], action_ids[n], expert_ids[n] or -1, won[n]); d is the CSV's feature width."""
     xs: list[list[float]] = []
     actions: list[int] = []
     experts: list[int] = []
     wons: list[bool] = []
     class_idx = SELF_CLASS_F.get((self_class or "").lower())
+    feature_dim: int | None = None
 
     for path in paths:
         with path.open(newline="", encoding="utf-8", errors="replace") as f:
@@ -64,27 +80,40 @@ def load_spellbook_rows(
                 reader = csv.DictReader(f)
                 rows = list(reader)
                 has_expert = "expert_action" in (reader.fieldnames or [])
+                path_dim = _header_feature_dim(reader.fieldnames or [])
             else:
                 # Headerless: detect v3 vs v4 vs v5 by column count.
                 raw = list(csv.reader(f))
                 if not raw:
                     continue
                 width = len(raw[0])
+                path_dim = LEGACY_FEATURE_DIM
                 if width >= len(DUEL_V5_META) + DUEL_V5_FEATURES + 8:  # duel_v5 = 113 cols
                     has_expert = True
                     meta = DUEL_V5_META
+                    path_dim = DUEL_V5_FEATURES
                 else:
-                    has_expert = width >= 12 + FEATURE_DIM
+                    has_expert = width >= 12 + LEGACY_FEATURE_DIM
                     meta = DUEL_V4_META if has_expert else DUEL_V3_META
                 feat_start = len(meta)
                 rows = []
                 for cols in raw:
-                    if len(cols) < feat_start + FEATURE_DIM:
+                    if len(cols) < feat_start + path_dim:
                         continue
                     d = {meta[i]: cols[i] for i in range(len(meta))}
-                    for i in range(FEATURE_DIM):
+                    for i in range(path_dim):
                         d[f"f{i}"] = cols[feat_start + i]
                     rows.append(d)
+
+            # Mixing widths would silently train on a ragged matrix; DEC-043 forbids zero-fill,
+            # so a mismatch is a fatal input error, not something to pad around.
+            if feature_dim is None:
+                feature_dim = path_dim
+            elif path_dim != feature_dim:
+                raise SystemExit(
+                    f"{path}: feature width {path_dim} != {feature_dim} from earlier inputs; "
+                    "do not mix CSV revisions in one training set"
+                )
 
             # Per-bot episode outcome: last terminal!=0 row per (match_id, bot_guid),
             # same convention as eval_duel_winrate.py.
@@ -116,7 +145,7 @@ def load_spellbook_rows(
 
                 feats = []
                 ok = True
-                for i in range(FEATURE_DIM):
+                for i in range(feature_dim):
                     try:
                         feats.append(float(row.get(f"f{i}", 0) or 0))
                     except ValueError:

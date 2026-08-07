@@ -5,6 +5,7 @@
  */
 
 #include "MageActions.h"
+#include "MlDuelBracket.h"
 #include "PlayerbotAIConfig.h"
 #include "Playerbots.h"
 #include "ServerFacade.h"
@@ -156,4 +157,16 @@ bool CastBlinkBackAction::Execute(Event event)
 
     bot->SetOrientation(bot->GetAngle(target) + M_PI);
     return CastSpellAction::Execute(event);
+}
+
+bool CastSummonWaterElementalAction::isUseful()
+{
+    // DEC-044: on the duel farm the elemental is a learned head action, so the scripted rotation
+    // must not quietly restore it in the rematch gap - that is what made every duel open pet-up
+    // and starved the summon decision of labels. Inside the duel the trigger stays live, which is
+    // what keeps the stock baseline seat honest.
+    if (sMlDuelBracket.SuppressesScriptedSummon(bot))
+        return false;
+
+    return CastBuffSpellAction::isUseful();
 }

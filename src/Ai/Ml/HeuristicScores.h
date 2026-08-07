@@ -31,12 +31,15 @@ enum ActionFlagIndex : size_t
 
 // Disambiguates same-flag actions (frostbolt vs fireball). Not logged — recomputed from action name.
 static constexpr size_t AF_ID_COUNT = 4;
-// DEC-036: the ability head stays pinned to the 70-feature slice; CF_MOVE (70-89) never feeds it.
-static constexpr size_t ML_INPUT_DIM = CF_ABILITY_FEATURE_COUNT + AF_COUNT + AF_ID_COUNT; // 82
-// Pre-action-id duel PBML (70+8). Still loadable; cannot separate same-flag mage bolts.
-static constexpr size_t ML_INPUT_DIM_NO_ACTION_ID = CF_ABILITY_FEATURE_COUNT + AF_COUNT; // 78
-// M1 movement head consumes the full state vector (no action-flag / action-id packs).
-static constexpr size_t ML_MOVE_INPUT_DIM = CF_FEATURE_COUNT; // 90
+// DEC-042/043: duel_v6 ability heads consume the whole state vector, movement pack included.
+static constexpr size_t ML_INPUT_DIM = CF_FEATURE_COUNT + AF_COUNT + AF_ID_COUNT; // 124
+// Frozen S-track ability heads (DEC-036 era): 70-feature slice + flags + action id, and the
+// same pair without the action-id pack. Still loadable so the duel-s1/duel-s2 replay profiles
+// (DEC-040) keep scoring their certified artifacts.
+static constexpr size_t ML_INPUT_DIM_LEGACY = CF_LEGACY_ABILITY_FEATURE_COUNT + AF_COUNT + AF_ID_COUNT; // 82
+static constexpr size_t ML_INPUT_DIM_LEGACY_NO_ACTION_ID = CF_LEGACY_ABILITY_FEATURE_COUNT + AF_COUNT; // 78
+// M1 movement heads are pinned to the 90-D prefix slice; later packs never reach them (DEC-043).
+static constexpr size_t ML_MOVE_INPUT_DIM = CF_MOVE_HEAD_FEATURE_COUNT; // 90
 // Legacy PBML1 (pre-duel packs): 12 core features + 8 action flags.
 static constexpr size_t ML_INPUT_DIM_V1 = 12 + AF_COUNT;
 

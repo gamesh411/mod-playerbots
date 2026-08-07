@@ -10,6 +10,8 @@ from pathlib import Path
 import numpy as np
 
 CLASS_F = {"warrior": 12, "mage": 19}
+# CF_SELF_PET_COUNT, first column of the duel_v6 CF_PET pack (DEC-043).
+SELF_PET_COUNT_F = 90
 
 
 def load_pbml_multi(path: Path):
@@ -51,14 +53,42 @@ def main():
     ap.add_argument("--exclude", type=int, nargs="*", default=[],
                     help="spell ids masked at runtime by MlDuelSpellPool (toggles, stances); "
                          "their logits are set to -inf before argmax to mirror live behavior")
+    ap.add_argument("--summon-spell", type=int, default=31687,
+                    help="DEC-044 starvation-floor subject (Summon Water Elemental)")
+    ap.add_argument("--pet-down-floor", type=float, default=None,
+                    help="DEC-044: minimum argmax share of --summon-spell over pet-down "
+                         "summon-ready states. Default 0.10 on duel_v6 CSVs, skipped on older "
+                         "revisions that have no CF_PET pack; pass a value to require the check "
+                         "(or 0 to disable it)")
     args = ap.parse_args()
 
     m = load_pbml_multi(args.pbml)
     cf = f"f{CLASS_F[args.self_class]}"
+    pet_f = f"f{SELF_PET_COUNT_F}"
     xs = []
     experts = []
+    kept_rows = []
     with args.csv.open(newline="", encoding="utf-8", errors="replace") as f:
-        for row in csv.DictReader(f):
+        reader = csv.DictReader(f)
+        has_pet_pack = pet_f in (reader.fieldnames or [])
+        # Summon readiness is not in the state vector, so approximate the 3-min cooldown by the
+        # bot's own first summon inside the duel: before it the spell is up (DEC-037 clears
+        # cooldowns at rematch), after it the state is pet-down-but-on-cooldown and must not
+        # count against the floor.
+        summoned_at: dict[tuple[str, str], float] = {}
+        rows = list(reader)
+        for row in rows:
+            if (row.get("action") or "").strip() != str(args.summon_spell):
+                continue
+            key = (row.get("match_id", ""), row.get("bot_guid", ""))
+            try:
+                t = float(row.get("time_ms", 0) or 0)
+            except ValueError:
+                continue
+            if key not in summoned_at or t < summoned_at[key]:
+                summoned_at[key] = t
+
+        for row in rows:
             if row.get("in_duel") not in ("1", "1.0"):
                 continue
             try:
@@ -69,6 +99,7 @@ def main():
                 continue
             e = (row.get("expert_action") or "").strip()
             experts.append(int(e) if e.isdigit() else -1)
+            kept_rows.append(row)
             if len(xs) >= args.max_states:
                 break
     if not xs:
@@ -86,12 +117,48 @@ def main():
     print(f"{args.pbml.name}: states={n} distinct_argmax={len(counts)}")
     for sid, c in counts.most_common(12):
         print(f"  spell {sid:6d}  {c / n * 100:5.1f}%")
+    pred_ids = np.asarray([int(m["vocab"][t]) for t in top], dtype=np.int64)
+
     exp = np.asarray(experts, dtype=np.int64)
     mask = exp > 0
     if mask.any():
-        pred_ids = np.asarray([int(m["vocab"][t]) for t in top], dtype=np.int64)
         agree = float(np.mean(pred_ids[mask] == exp[mask]))
         print(f"  expert-agreement: {agree * 100:.1f}% over {int(mask.sum())} labeled states")
+
+    # DEC-044 starvation floor: an anti-starvation check, not a behavior mandate - it only
+    # separates "summon is dead in this policy" from "summon is used selectively", so reactive
+    # deferral stays learnable in the remaining states.
+    floor = 0.10 if args.pet_down_floor is None else args.pet_down_floor
+    if floor > 0 and args.summon_spell in m["vocab"]:
+        if not has_pet_pack:
+            # Pre-duel_v6 data cannot answer "was the pet down" - the column did not exist. Say so
+            # rather than reporting a gate that never ran; demand the data only if asked explicitly.
+            if args.pet_down_floor is not None:
+                sys.exit(f"--pet-down-floor needs the duel_v6 CF_PET pack ({pet_f} missing from {args.csv})")
+            print(f"  pet-down floor: SKIPPED - {args.csv.name} predates the CF_PET pack ({pet_f} absent)")
+            return
+        ready = []
+        for i, row in enumerate(kept_rows):
+            try:
+                if float(row.get(pet_f, 0) or 0) >= 0.5:
+                    continue
+                t = float(row.get("time_ms", 0) or 0)
+            except ValueError:
+                continue
+            cast = summoned_at.get((row.get("match_id", ""), row.get("bot_guid", "")))
+            if cast is not None and t > cast:
+                continue
+            ready.append(i)
+
+        if not ready:
+            sys.exit("pet-down floor: no pet-down summon-ready states sampled - widen the CSV window")
+        share = float(np.mean(pred_ids[ready] == args.summon_spell))
+        verdict = "PASS" if share >= floor else "FAIL"
+        print(f"  pet-down floor: spell {args.summon_spell} argmax in {share * 100:.1f}% of "
+              f"{len(ready)} pet-down summon-ready states "
+              f"(floor {floor * 100:.0f}%) -> {verdict}")
+        if verdict == "FAIL":
+            sys.exit(1)
 
 
 if __name__ == "__main__":

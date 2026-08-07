@@ -120,13 +120,20 @@ void TryAddCandidate(std::vector<MlDuelSpellCandidate>& out, PlayerbotAI* botAI,
         botAI->GetBot()->GetCurrentSpell(CURRENT_MELEE_SPELL))
         return;
 
-    // DEC-034: shapeshift-form spells (warrior stances, druid forms) are always-legal persistent
-    // state flips, and the feature vector has no form bit - the head cannot condition on them, so
-    // they are an argmax sink (stance collapse). Form control stays scripted until a form feature
-    // lands.
+    // DEC-043 supersedes DEC-034 for warrior stances: CF_FORM makes the form conditionable, so
+    // stances re-enter the vocab - but only as real transitions. Re-entering the form the bot is
+    // already in is the always-legal no-op DEC-034 diagnosed as the argmax sink, so mask it at
+    // the source (DEC-031 idiom). Druid forms stay out until a druid seat exists.
     for (uint8 i = 0; i < MAX_SPELL_EFFECTS; ++i)
-        if (info->Effects[i].ApplyAuraName == SPELL_AURA_MOD_SHAPESHIFT)
+    {
+        if (info->Effects[i].ApplyAuraName != SPELL_AURA_MOD_SHAPESHIFT)
+            continue;
+
+        Player* bot = botAI->GetBot();
+        ShapeshiftForm const target = ShapeshiftForm(info->Effects[i].MiscValue);
+        if (bot->getClass() != CLASS_WARRIOR || bot->GetShapeshiftForm() == target)
             return;
+    }
 
     Unit* castTarget = nullptr;
     if (petSpell)

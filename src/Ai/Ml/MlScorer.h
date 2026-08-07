@@ -46,6 +46,10 @@ public:
     void BuildInputForDim(CombatFeatureVector const& features, std::string const& actionName, float* out,
                           size_t outDim) const;
 
+    // How many leading state features a PBML of this input width was trained on: frozen S-track
+    // heads take the 70-D pre-movement slice, duel_v6 heads take the whole vector (DEC-043).
+    static size_t AbilityFeatureSliceFor(size_t inputDim);
+
     // Expose model shape for Engine policy routing.
     bool HasMultiLogitFor(uint8 playerClass);
 

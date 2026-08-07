@@ -84,8 +84,11 @@ DUEL_V5_META = DUEL_V4_META + [
     "expert_movement_intent",
 ]
 DUEL_V5_FEATURES = 90
-# DEC-036: the ability head stays pinned to the 70-feature slice (ML_INPUT_DIM 82);
-# CF_MOVE (f70..f89) is movement-head input only.
+# duel_v6 (DEC-043): same meta as v5, features grow 90 -> 112 (CF_PET f90..f99, CF_FORM f100..f111).
+DUEL_V6_META = DUEL_V5_META
+DUEL_V6_FEATURES = 112
+# Feature width the frozen S-track scalar heads were trained on (ML_INPUT_DIM 82). Heads trained
+# on duel_v6 take the whole vector instead; this constant only describes the legacy artifacts.
 ABILITY_FEATURES = 70
 
 # Mirror CombatDecisionUtil::IsMetaAction (trainer-side safety net for old CSVs).
@@ -127,6 +130,9 @@ def duel_fieldnames_for_width(n_cols: int) -> list[str] | None:
     # duel_v5: 15 meta + 90 features + 8 flags = 113 cols; distinct from headerless v4 (90).
     if n_cols == len(DUEL_V5_META) + DUEL_V5_FEATURES + 8:
         return DUEL_V5_META + [f"f{i}" for i in range(DUEL_V5_FEATURES)] + ACTION_COLS_V2
+    # duel_v6: same meta, 112 features + 8 flags = 135 cols.
+    if n_cols == len(DUEL_V6_META) + DUEL_V6_FEATURES + 8:
+        return DUEL_V6_META + [f"f{i}" for i in range(DUEL_V6_FEATURES)] + ACTION_COLS_V2
     return None
 
 
@@ -159,7 +165,7 @@ def resolve_fieldnames(path: Path) -> tuple[list[str], bool]:
     inferred = duel_fieldnames_for_width(len(first))
     if not inferred:
         raise SystemExit(
-            f"Headerless CSV with {len(first)} cols not recognized as duel_v3/v4/v5. "
+            f"Headerless CSV with {len(first)} cols not recognized as duel_v3/v4/v5/v6. "
             "Prepend a header or pass a headed file."
         )
     print(f"schema: injected headerless duel layout cols={len(first)}")

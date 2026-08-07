@@ -95,10 +95,14 @@ private:
     bool movementHeaderWritten = false;
     // true ⇒ rows include expert_action (duel_v4 / DEC-025). false ⇒ legacy v3 layout.
     bool logExpertAction = true;
-    // true ⇒ duel_v5 (DEC-036): movement columns + the full 90-feature vector. When appending
-    // to a legacy v3/v4 file, both stay off and rows keep the old 70-feature width.
+    // true ⇒ duel_v5 and later (DEC-036): movement columns present. When appending to a legacy
+    // v3/v4 file this stays off and rows keep that file's narrower layout.
     bool logMovementCols = true;
+    // Feature width of the file being appended to. A fresh file gets the current vector; an
+    // existing one keeps its own width, since widening mid-file silently misaligns every column
+    // after the features for anything reading the file as one table.
     size_t featureColsToWrite = CF_FEATURE_COUNT;
+    size_t movementFeatureColsToWrite = CF_FEATURE_COUNT;
 };
 
 #define sMlDecisionLogger MlDecisionLogger::instance()

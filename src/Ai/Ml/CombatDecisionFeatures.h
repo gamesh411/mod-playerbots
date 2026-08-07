@@ -101,13 +101,14 @@ enum CombatFeatureIndex : size_t
     CF_FOE_HAS_CONTROL_LOSS,
     CF_IN_DUEL,
 
-    // Ability-head boundary: everything above feeds the 82-D ability PBML (DEC-025/026);
-    // the CF_MOVE pack below is movement-head / logging only (DEC-036).
-    CF_ABILITY_FEATURE_COUNT,
+    // Width of the pre-movement slice the frozen S-track ability heads were trained on
+    // (DEC-025/026, 82-D PBML). Kept as a marker so those artifacts still load; duel_v6 ability
+    // heads consume the whole vector instead (DEC-042/043).
+    CF_LEGACY_ABILITY_FEATURE_COUNT,
 
     // --- Pack CF_MOVE (70-89): kinematics, impairment, walkability probes (DEC-036) ---
     // Angles foe-bearing-relative, normalized to [-1, 1] (angle / pi); speeds / base run.
-    CF_MOVE_SELF_SPEED_FRAC = CF_ABILITY_FEATURE_COUNT,
+    CF_MOVE_SELF_SPEED_FRAC = CF_LEGACY_ABILITY_FEATURE_COUNT,
     CF_MOVE_SELF_HEADING_REL,
     CF_MOVE_FOE_SPEED_FRAC,
     CF_MOVE_FOE_HEADING_REL,
@@ -130,8 +131,53 @@ enum CombatFeatureIndex : size_t
     CF_MOVE_PROBE_W,
     CF_MOVE_PROBE_NW,
 
+    // Input width of the frozen M1 movement heads (DEC-039). Packs only ever append, so this
+    // prefix slice stays stable forever and the frozen PBML artifacts remain byte-identical
+    // however far the vector grows (DEC-043).
+    CF_MOVE_HEAD_FEATURE_COUNT,
+
+    // --- Pack CF_PET (90-99): role-based minion state, self/foe symmetric (DEC-043) ---
+    // Readiness bits follow the DuelCD convention (1 = known and off CD, 0 = on CD or absent) and
+    // cover non-autocast command spells only - autocast is pet AI, not a decision (DEC-032).
+    CF_SELF_PET_COUNT = CF_MOVE_HEAD_FEATURE_COUNT,
+    CF_SELF_PET_HEALTH,
+    CF_SELF_PET_KICK_READY,
+    CF_SELF_PET_CC_READY,
+    CF_SELF_PET_UTILITY_READY,
+    CF_FOE_PET_COUNT,
+    CF_FOE_PET_HEALTH,
+    CF_FOE_PET_KICK_READY,
+    CF_FOE_PET_CC_READY,
+    CF_FOE_PET_UTILITY_READY,
+
+    // --- Pack CF_FORM (100-111): class-relative form one-hot (DEC-043) ---
+    // All-zero = base / no form, the spec-tab idiom. Slot meaning is class-relative; see
+    // FormSlot() in CombatDecisionFeatures.cpp for the per-class mapping.
+    CF_SELF_FORM_0,
+    CF_SELF_FORM_1,
+    CF_SELF_FORM_2,
+    CF_SELF_FORM_3,
+    CF_SELF_FORM_4,
+    CF_SELF_FORM_5,
+    CF_FOE_FORM_0,
+    CF_FOE_FORM_1,
+    CF_FOE_FORM_2,
+    CF_FOE_FORM_3,
+    CF_FOE_FORM_4,
+    CF_FOE_FORM_5,
+
     CF_FEATURE_COUNT
 };
+
+// Slots per side in the CF_FORM pack; a class with more forms than this needs a pack extension,
+// not a renumber.
+static constexpr size_t CF_FORM_SLOTS = 6;
+
+// Frozen artifacts are pinned to these widths, and CSV revisions are named after them, so a
+// renumber has to fail here rather than silently mis-slice every PBML and log row (DEC-043).
+static_assert(CF_LEGACY_ABILITY_FEATURE_COUNT == 70, "S-track ability heads (78/82-D PBML) slice f0..f69");
+static_assert(CF_MOVE_HEAD_FEATURE_COUNT == 90, "Frozen M1 movement heads are 90-D over f0..f89");
+static_assert(CF_FEATURE_COUNT == 112, "duel_v6 logs 112 state columns (DEC-043)");
 
 using CombatFeatureVector = std::array<float, CF_FEATURE_COUNT>;
 

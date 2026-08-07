@@ -65,6 +65,8 @@ class CastSummonWaterElementalAction : public CastBuffSpellAction
 public:
     CastSummonWaterElementalAction(PlayerbotAI* botAI)
         : CastBuffSpellAction(botAI, "summon water elemental") {}
+
+    bool isUseful() override;
 };
 
 // Boost Actions

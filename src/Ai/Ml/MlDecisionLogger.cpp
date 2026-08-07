@@ -131,7 +131,7 @@ void MlDecisionLogger::WriteRow(MlPendingDecision const& d, float reward, float 
         bool const fileHasContent = probe.good() && probe.tellg() > 0;
         if (!fileHasContent)
         {
-            // duel_v5: movement columns + CF_MOVE features (DEC-036), on top of v4 expert_action.
+            // duel_v6 (DEC-043): v5 layout with the vector grown to CF_PET + CF_FORM.
             logExpertAction = true;
             logMovementCols = true;
             featureColsToWrite = CF_FEATURE_COUNT;
@@ -145,7 +145,7 @@ void MlDecisionLogger::WriteRow(MlPendingDecision const& d, float reward, float 
         }
         else
         {
-            // Append-compatible with existing v3/v4/v5 files: keep the file's own layout.
+            // Append-compatible with existing v3/v4/v5/v6 files: keep the file's own layout.
             probe.clear();
             probe.seekg(0);
             std::string firstLine;
@@ -156,13 +156,19 @@ void MlDecisionLogger::WriteRow(MlPendingDecision const& d, float reward, float 
             size_t const cols = commas + 1;
             // Headerless files: detect layout by width. v4 = 12 meta + 70 + 8 = 90 cols;
             // v5 = 15 meta + 90 + 8 = 113 cols. Do not silently downgrade mid-file.
-            size_t const v4Cols = 12 + CF_ABILITY_FEATURE_COUNT + AF_COUNT;  // 90
-            size_t const v5Cols = 15 + CF_FEATURE_COUNT + AF_COUNT;          // 113
+            size_t const v4Cols = 12 + CF_LEGACY_ABILITY_FEATURE_COUNT + AF_COUNT;  // 90
+            size_t const v5Cols = 15 + CF_MOVE_HEAD_FEATURE_COUNT + AF_COUNT;       // 113
             if (!logMovementCols && !firstLine.empty() && cols >= v5Cols)
                 logMovementCols = true;
             if (!logExpertAction && !firstLine.empty() && cols >= v4Cols)
                 logExpertAction = true;
-            featureColsToWrite = logMovementCols ? CF_FEATURE_COUNT : CF_ABILITY_FEATURE_COUNT;
+            // Trust the file's own width rather than the current vector: appending v6-width rows
+            // to a v5 farm would shift every action-flag column by 22 for every reader.
+            size_t const metaCols = 11 + (logExpertAction ? 1 : 0) + (logMovementCols ? 3 : 0);
+            featureColsToWrite = cols > metaCols + AF_COUNT
+                                     ? std::min<size_t>(cols - metaCols - AF_COUNT, CF_FEATURE_COUNT)
+                                     : (logMovementCols ? CF_MOVE_HEAD_FEATURE_COUNT
+                                                        : size_t(CF_LEGACY_ABILITY_FEATURE_COUNT));
         }
         headerWritten = true;
     }
@@ -459,16 +465,30 @@ void MlDecisionLogger::WriteMovementRow(MlMovementPendingRow const& r, float rew
     if (!out)
         return;
 
+    constexpr size_t kMovementMetaCols = 9;
     if (!movementHeaderWritten)
     {
         std::ifstream probe(path.c_str(), std::ios::binary | std::ios::ate);
         if (!(probe.good() && probe.tellg() > 0))
         {
+            movementFeatureColsToWrite = CF_FEATURE_COUNT;
             out << "match_id,bot_guid,bot_class,time_ms,movement_intent,expert_movement_intent,"
                    "realized_heading,reward,terminal";
             for (size_t i = 0; i < CF_FEATURE_COUNT; ++i)
                 out << ",f" << i;
             out << "\n";
+        }
+        else
+        {
+            // Keep an existing movement farm's width; the M1 heads read the 90-D prefix either way.
+            probe.clear();
+            probe.seekg(0);
+            std::string firstLine;
+            std::getline(probe, firstLine);
+            size_t const cols = static_cast<size_t>(std::count(firstLine.begin(), firstLine.end(), ',')) + 1;
+            movementFeatureColsToWrite = cols > kMovementMetaCols
+                                             ? std::min<size_t>(cols - kMovementMetaCols, CF_FEATURE_COUNT)
+                                             : size_t(CF_MOVE_HEAD_FEATURE_COUNT);
         }
         movementHeaderWritten = true;
     }
@@ -476,7 +496,7 @@ void MlDecisionLogger::WriteMovementRow(MlMovementPendingRow const& r, float rew
     out << r.matchId << "," << r.botGuid.GetCounter() << "," << uint32(r.botClass) << "," << r.logTimeMs << ","
         << uint32(r.intent) << "," << uint32(r.expertIntent) << "," << r.realizedHeading << "," << reward << ","
         << terminal;
-    for (size_t i = 0; i < CF_FEATURE_COUNT; ++i)
+    for (size_t i = 0; i < movementFeatureColsToWrite; ++i)
         out << "," << r.features[i];
     out << "\n";
 }
