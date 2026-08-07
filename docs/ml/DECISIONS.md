@@ -700,3 +700,33 @@ The fair-rematch reset (DEC-037) never touched the pet, so with cooldowns cleare
 
 **Consequences:** [#26](https://github.com/gamesh411/mod-playerbots/issues/26) closes; [#28](https://github.com/gamesh411/mod-playerbots/issues/28) (M2 execute) is fully unblocked.
 Implementation (pet dismissal in `RestoreForRematch`, between-duel summon suppression for bracket seats, both conf knobs + profile wiring on wotlk-playerbots-server, pet-down slice in the trainer's deploy gate) lands at M2 execute ([#28](https://github.com/gamesh411/mod-playerbots/issues/28)).
+
+### DEC-045 - 2026-08-07 - Observer spline movement transport supersedes DEC-036 packet broadcast
+
+**Status:** accepted  
+**Context:** [#29](https://github.com/gamesh411/mod-playerbots/issues/29) transport ticket, opened by the [#27](https://github.com/gamesh411/mod-playerbots/issues/27) client-freeze diagnosis (main-thread livelock in the observer client's movement/collision integration, fed by flag-extrapolated motion; spline path proven clean at identical bot density by the #27 bisection).
+Supersedes **only the "Motion mechanism" broadcast clause of DEC-036** (MSG_MOVE_* wire format); executor stepping, subtick, clamps, facing solver, movers, features, and all server-side semantics stand as frozen (DEC-036/DEC-039, stage/m0 and stage/m1).
+Real players are observed via the same flag-extrapolation path (`HandleMovementOpcodes` relays the mover's own MSG_MOVE packets); the freeze is fed by our synthesized approximation of that traffic, and which fidelity axis matters is unknown, so cadence mitigations only shrink the odds.
+The spline client path is the one every creature in view runs constantly and is the only candidate with positive evidence.
+
+**Decision:**
+
+| Piece | Rule |
+|------|------|
+| Transport | **Broadcast-only `SMSG_MONSTER_MOVE` synthesis.** The spline exists only on the wire (`SendMessageToSet`); no server-side `MoveSpline` is installed and the executor remains the sole position source, so frozen policies and eval epoch 2 stay valid. |
+| Segments | **One self-anchoring segment per 500 ms intent tick:** start at current server truth, end at the obstacle-clamped prediction one intent horizon out, duration 500 ms. No drift tracking - every segment re-anchors by construction. Packet rate ~2/bot/s, same magnitude as the DEC-036 transport. |
+| Facing | **Facing-angle mode on every segment** carrying the facing solver's bearing (strafes render natively). Stationary turns are zero-length facing segments, throttled ~3/s as today. Server-side orientation (`SilentRelocate`) stays the truth the heads see. |
+| Jumps | **One parabolic segment at takeoff** covering the whole arc (deterministic from `kJumpVelocity`/`kGravity`; intents cannot pre-empt the jump, so no re-anchor needed). Facing-angle = post-flip bearing during flight; restored facing rides the next ground segment. No mid-air packets; the falling flag never appears on the wire (server-side `m_movementInfo` untouched). |
+| Stop / root / death | **One anchoring stop-spline at server truth** on transition to halted, rooted, or dead, then silence until movement resumes. A position anchor carries no move flags, so the `0508663c` root-contradiction wedge cannot recur; observers are not left up to 500 ms off-truth for a root's duration. One wire representation of stopped regardless of cause. |
+| Conf | `AiPlayerbot.MlDuelMovementTransport = spline | packets`, default **`spline`**. `packets` keeps the DEC-036 wire format fully functional for A/B and rollback. The flag gates **only the broadcast layer**; both values share identical executor stepping and server-side state. |
+| Profiles | `spline` is the default everywhere, **including the DEC-040 replay profiles** (`duel-s0`..`duel-m1`): the freeze contract covers the policy and its server-side substrate, which does not move. Archaeology note: pre-DEC-045 farming and freezes ran the packet transport. |
+| Acceptance | Four legs, in order: (1) **control** - `packets` still reproduces the freeze under the #27 recipe (proves the soak can detect; if latent, record honestly and downgrade confidence); (2) **soak** - `spline` survives >=20 park-hop world-entry cycles plus >=2 h parked at farm scale (~210 bots), zero `procdump -h` triggers, client memory flat; (3) **throughput** - within 5% of the DEC-038 baseline 4,548 duels/hour (a transport change should not touch server cost; a bigger drop is a bug, not a waiver case); (4) **demo** - DEC-040 10-bot profile checked at the designed seams: strafe facing lock, jump-turn arc, root stop anchor, kite reversals. |
+
+**Why:**
+- The freeze is intermittent and the exact trigger property unknown; shorter heartbeats or per-subtick positions keep the same client code path and only change the odds, at the same soak-validation cost as the real fix.
+- Per-subtick MSG_MOVE would multiply packet rate ~5x at farm scale and threaten the throughput gate from the server side; a park visibility cap fails the showcase constraint outright.
+- Per-tick self-anchoring deletes the drift-model/threshold error axis entirely; executor clamps make mid-segment prediction uncertain near obstacles, so an event-driven transport would converge on per-tick anchoring anyway, with extra machinery.
+- One packet shape for all ground motion (facing always explicit) and no MSG_MOVE/spline mixing keeps observer-side unit state single-sourced; a jump exception would reintroduce the transition seams and keep a foot in the freezing path.
+
+**Consequences:** [#29](https://github.com/gamesh411/mod-playerbots/issues/29) closes; execution lands via [#30](https://github.com/gamesh411/mod-playerbots/issues/30) (no blocking edge either way with [#28](https://github.com/gamesh411/mod-playerbots/issues/28): the M2 farm runs headless and neither depends on the other; the demo/showcase path is what waits on the fix).
+The M1 stage card and FEATURES.md need no change (no feature or artifact moves); conf.dist gains the transport selector at #30.
