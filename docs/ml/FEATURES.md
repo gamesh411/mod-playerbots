@@ -13,6 +13,8 @@ Schema / PBML input today: `ML_INPUT_DIM = CF_FEATURE_COUNT + AF_COUNT + AF_ID_C
 Pre-action-id duel PBML (**78**) still loads; same-flag actions (e.g. frostbolt vs fireball) are indistinguishable without the id pack.  
 Legacy PBML1 still supported at inference via `ML_INPUT_DIM_V1 = 20` (core[0..11] + action flags only).
 
+At M2 execute (#28, DEC-043) the state grows to **112** (CF_PET 90-99 + CF_FORM 100-111) and the ability head to `ML_INPUT_DIM = 112 + 8 + 4 = 124`; frozen M1 movement heads keep their 90-D input via the stable prefix slice `state[0..89]`.
+
 Duel logfile for this layout: `ml_decisions_duel_v2.csv`.
 
 **Omniscience note:** foe CD / DR / spec / power are read from the live `Player*` on this private server (training signal). A human client would not see all of that; difficulty dial (D7) can later mask packs to simulate imperfect information.
@@ -134,6 +136,41 @@ Log-only columns riding `duel_v5`: `realized_heading` (continuous heading actual
 
 ---
 
+## Pack: CF_PET (90-99) - decided (DEC-043), lands at M2 execute #28
+
+Role-based and self/foe symmetric, like DuelCD: role membership comes from per-class spell lists in `CombatDecisionFeatures.cpp`.
+Non-autocast **command** spells only (DEC-032 autocast exclusion); autocast repeats are the pet AI's job, not state.
+Only count/health/CC light up for Arms vs Frost; the remaining slots are zero until a pet class enters the curriculum.
+Duel logfile from this layout on: `ml_decisions_duel_v6.csv`.
+
+| Index | Name | Meaning |
+|------:|------|---------|
+| 90 | `CF_SELF_PET_COUNT` | Active controllable pets/guardians, scaled (as `CF_ATTACKER_COUNT`) |
+| 91 | `CF_SELF_PET_HEALTH` | Primary pet HP fraction (0 when none) |
+| 92 | `CF_SELF_PET_KICK_READY` | Pet interrupt/silence command ready (e.g. Spell Lock) |
+| 93 | `CF_SELF_PET_CC_READY` | Pet root/stun/incap command ready (Freeze, Gnaw, Seduction) |
+| 94 | `CF_SELF_PET_UTILITY_READY` | Pet dispel/heal/other command ready (e.g. Devour Magic) |
+| 95-99 | `CF_FOE_PET_*` | Same five, foe side |
+
+---
+
+## Pack: CF_FORM (100-111) - decided (DEC-043), lands at M2 execute #28
+
+Class-relative one-hot (spec-tab idiom); all-zeros = base/no form.
+Unlocks the DEC-034 revisit: warrior stances re-enter the M2 head with same-form re-picks masked (DEC-043).
+
+| Index | Name | Meaning |
+|------:|------|---------|
+| 100-105 | `CF_SELF_FORM_0`…`_5` | Self form one-hot, class-relative |
+| 106-111 | `CF_FOE_FORM_0`…`_5` | Foe form one-hot, class-relative |
+
+Slot mapping: Warrior 0=Battle, 1=Defensive, 2=Berserker.
+Druid 0=Bear, 1=Cat, 2=Moonkin, 3=Tree, 4=Travel.
+Priest 0=Shadowform.
+Shaman 0=Ghost Wolf.
+
+---
+
 ## Pack: Action flags (`ActionFlagIndex`) — shipped
 
 | Index | Name | Meaning |
@@ -178,7 +215,7 @@ Recomputed from the action name at train and inference (not logged). Separates s
 | `movement_intent` | Label (duel_v5) | Live 9-way movement pick (M0: scripted intent policy) |
 | `expert_movement_intent` | Label (duel_v5) | Scripted teacher pick (DAgger-style; equals `movement_intent` in M0) |
 
-Rotating files (`ml_decisions_duel_v1.csv` → `_v2.csv`, …) when columns / feature count change. Fresh S1 DAgger farms use `ml_decisions_duel_v4.csv` (adds `expert_action`). Movement-era farms (M0+) use `ml_decisions_duel_v5.csv` (CF_MOVE 70–89 + the three movement columns).
+Rotating files (`ml_decisions_duel_v1.csv` → `_v2.csv`, …) when columns / feature count change. Fresh S1 DAgger farms use `ml_decisions_duel_v4.csv` (adds `expert_action`). Movement-era farms (M0+) use `ml_decisions_duel_v5.csv` (CF_MOVE 70–89 + the three movement columns). M2 farms use `ml_decisions_duel_v6.csv` (CF_PET 90-99 + CF_FORM 100-111, DEC-043); duel_v5 stays valid for the frozen movement track via the 90-D prefix.
 
 ---
 
