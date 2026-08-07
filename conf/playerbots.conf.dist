@@ -2604,6 +2604,12 @@ AiPlayerbot.MlDuelMovement.TerminalLambda = 5.0
 # Movement CSV cadence: every Nth subtick (5 = the 500ms intent horizon) plus on intent change.
 AiPlayerbot.MlDuelMovement.LogEveryNSubticks = 5
 AiPlayerbot.MlDuelMovement.LogFile = "ml_movement_duel_v1.csv"
+# DEC-045 observer transport. "spline" = broadcast-only SMSG_MONSTER_MOVE synthesis: one
+# self-anchoring segment per 500ms intent tick (facing-angle mode, parabolic jump arcs, anchoring
+# stop-spline on halt/root/death). "packets" = DEC-036 MSG_MOVE_* wire format, kept for A/B and
+# rollback (it feeds the #27 observer-client freeze). Gates only the broadcast layer: executor
+# stepping and server-side state are identical under both, so frozen stages stay valid.
+AiPlayerbot.MlDuelMovementTransport = "spline"
 # DEC-039 per-class movement heads (empty ⇒ scripted fallback for that class).
 AiPlayerbot.MlModelPathDuelMovement.Warrior = ""
 AiPlayerbot.MlModelPathDuelMovement.Mage = ""
