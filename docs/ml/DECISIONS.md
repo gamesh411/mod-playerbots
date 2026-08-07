@@ -643,3 +643,32 @@ The frozen S-track ability heads learned spell values against a statue-movement 
 
 **Consequences:** #24 closes; an Execute M2 ticket is created blocked by #25/#26, which return to the live frontier as M2 prerequisites.
 Epoch-1 and superseded farm CSVs archived to `C:\AzerothCore-server\archive\csv-epoch1-stale-20260807.tar.gz` (48 files, 202M compressed, ~1.7G reclaimed); live and freeze-referenced CSVs untouched.
+
+### DEC-043 - 2026-08-07 - duel_v6 feature extension: CF_PET + CF_FORM packs; warrior stance unlock
+
+**Status:** accepted  
+**Context:** [#25](https://github.com/gamesh411/mod-playerbots/issues/25) feature-extension ticket, unparked by the M1 freeze (DEC-041) as an M2 prerequisite (DEC-042).
+The round-3 plateau handoff named three starvation candidates: pet-state (DEC-032 fog), form/stance (DEC-034 fog), and chase-state separability.
+This DEC finalizes the `duel_v6` state vector before the M2 farm spins.
+
+**Decision:**
+
+| Piece | Rule |
+|------|------|
+| Chase-state | **Absorbed** - no dedicated features. `CF_DIST_NORM` x `CF_SELF_GAPCLOSE_READY` plus the CF_MOVE pack already express the conjunction; the statue-world failure was coverage (those states never occurred), which movement-active data fixes. |
+| CF_PET pack (90-99) | Role-based, self/foe symmetric: `CF_{SELF,FOE}_PET_COUNT` (active controllable pets/guardians, scaled like `CF_ATTACKER_COUNT`), `_PET_HEALTH` (primary pet HP fraction, 0 when none), `_PET_KICK_READY`, `_PET_CC_READY`, `_PET_UTILITY_READY`. Role membership via per-class spell lists in `CombatDecisionFeatures.cpp` (DuelCD idiom); **non-autocast command spells only** (DEC-032 autocast exclusion carries over). Sized for future pet classes (hunter, warlock, DK, shadowfiend, feral spirits) - only count/health/CC light up for Arms vs Frost today. |
+| CF_FORM pack (100-111) | Class-relative one-hot, `CF_SELF_FORM_0..5` + `CF_FOE_FORM_0..5`, all-zeros = base/no form (spec-tab idiom). Warrior: 0=Battle, 1=Defensive, 2=Berserker. Druid: 0=Bear, 1=Cat, 2=Moonkin, 3=Tree, 4=Travel. Priest: 0=Shadowform. Shaman: 0=Ghost Wolf. |
+| Stance unlock | DEC-034's candidate-pool exclusion is **superseded for warrior stances**: they re-enter the M2 vocab at the duel_v6 rebuild. `MlDuelSpellPool` masks the shapeshift spell of the form the bot is already in (DEC-031 idiom), so every pickable stance is a real transition. `--drop-labels 2457 2458 71` retired for duel_v6 farms. Druid forms stay excluded (no druid seat; one-line list change when one arrives). |
+| Dimensions | `CF_FEATURE_COUNT` 90 -> **112**; ability-head `ML_INPUT_DIM` 82 -> **124** (112 + 8 flags + 4 id). |
+| Movement prefix slice | Frozen M1 movement heads keep their 90-D state-only input: the executor feeds `state[0..89]`, PBML artifacts byte-identical. Packs only append, so the first-90 prefix is stable forever. `duel_v6` logs all 112 state columns; the movement trainer's `FEATURE_COLS` selects the prefix, and an M3 movement re-adaptation may choose the full width on the same CSVs. |
+| Data compatibility | **No zero-fill anywhere.** `duel_v6` is the only M2 ability-training data (DEC-042 fresh-farm recipe); `duel_v5` remains valid solely for the frozen movement track. Zero-filled duel_v5 rows would carry systematically false pet/form values (the elemental was frequently up while the column would read absent). |
+| Bookkeeping | DEC-026's "70-D" wording needs no supersession (S2-epoch context; S2 waived per DEC-035; M2's feature contract is DEC-042's, which points here). FEATURES.md is the layout authority and gains both pack tables, marked as landing at M2 execute ([#28](https://github.com/gamesh411/mod-playerbots/issues/28)). |
+
+**Why:**
+- Pre-composed range buckets would duplicate CF_MOVE semantics (one-semantic-per-index rule) for no representational gain; a hidden layer composes the conjunction once the data covers it.
+- Role bits scale to every future pet class by extending a list instead of renumbering the vector, exactly as DuelCD did for player cooldowns.
+- An action whose precondition is invisible cannot be state-conditionally learned (DEC-034); the form bit makes stance picks conditionable, and same-form masking removes the always-legal no-op sink (DEC-030/031 lesson) at the source instead of in the trainer.
+- Touching frozen M1 artifacts (zero-pad or retrain) buys no behavior and reopens a certified freeze; a stable prefix is free.
+
+**Consequences:** [#25](https://github.com/gamesh411/mod-playerbots/issues/25) closes; [#26](https://github.com/gamesh411/mod-playerbots/issues/26) (Summon Water Elemental: learn vs scaffold) reaches the frontier with its prerequisite pet-state feature designed.
+Implementation (feature fills, pool masks, trainer `FEATURE_COLS`/vocab changes, `ml_decisions_duel_v6.csv` logger rev) lands at M2 execute ([#28](https://github.com/gamesh411/mod-playerbots/issues/28)).
