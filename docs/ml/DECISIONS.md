@@ -672,3 +672,31 @@ This DEC finalizes the `duel_v6` state vector before the M2 farm spins.
 
 **Consequences:** [#25](https://github.com/gamesh411/mod-playerbots/issues/25) closes; [#26](https://github.com/gamesh411/mod-playerbots/issues/26) (Summon Water Elemental: learn vs scaffold) reaches the frontier with its prerequisite pet-state feature designed.
 Implementation (feature fills, pool masks, trainer `FEATURE_COLS`/vocab changes, `ml_decisions_duel_v6.csv` logger rev) lands at M2 execute ([#28](https://github.com/gamesh411/mod-playerbots/issues/28)).
+
+### DEC-044 - 2026-08-07 - Summon Water Elemental is a learned head action; farm world engineered for pet-down coverage
+
+**Status:** accepted  
+**Context:** [#26](https://github.com/gamesh411/mod-playerbots/issues/26) learn-vs-scaffold ticket (DEC-030 family), unparked by the M1 freeze as an M2 prerequisite (DEC-042).
+Observed: the S2 mage head picked Summon Water Elemental 31687 **zero** times at tau=0 across every gate smoke and only ~10 times in round-3 explore data; Freeze 33395 fired only because the glyphed permanent elemental was re-summoned by scripted out-of-duel AI between duels.
+Since parking, two blockers fell: DEC-043 made the precondition visible (`CF_SELF_PET_COUNT`), and DEC-042's BC round 0 imitates the stock rotation, which does summon via the priority-30 "no pet" trigger.
+The fair-rematch reset (DEC-037) never touched the pet, so with cooldowns cleared and the out-of-duel AI re-summoning in the rematch gap, duels essentially never opened pet-down - the starvation was distributional, not a learnability limit.
+
+**Decision:**
+
+| Piece | Rule |
+|------|------|
+| Head membership | 31687 stays a **learned head action** - enters the M2 vocab at the duel_v6 data-derived rebuild. Freeze 33395 stays a command head action; DEC-032 autocast exclusion (Waterbolt) carries forward. Scaffolding rejected as the primary path: summon timing has real policy content (summoning into Cleave / Sweeping Strikes wastes the 3-min CD; Nova -> Blink -> summon-at-range must stay learnable), and a scaffolded opener is a permanently predictable tell. |
+| Fair-rematch pet reset | `RestoreForRematch` dismisses the elemental, and the between-duel scripted summon is suppressed for bracket seats - a surviving pet is carried-over state exactly like banked rage (DEC-037 family). Every duel opens pet-down, so round-0 BC gets dense stock summon labels and the head sees the decision every duel. Symmetric for the stock gate baseline, which re-summons via its own trigger. |
+| Reset scope | Conf flag alongside `resetCooldownsOnDuelEnd` (`MlDuelBracketPetReset`): on in `duel-farm` and the future `duel-m2` replay row, off in the `duel-s0`..`duel-m1` replay rows so frozen-stage replays keep their certified-era world (DEC-040 discipline). |
+| Unglyphed farm share | Conf knob (`MlDuelUnglyphedMageShare`, default 0.25 in `duel-farm`, 0 elsewhere): that share of farm mage seats has Glyph of Eternal Water stripped at kit init, deterministic by bot guid - organic mid-duel expiry states. Gate, demo, and replay runs stay on the canonical glyphed kit. |
+| Glyph-agnostic rule | The glyph is deliberately **not** a feature: the head conditions on pet state (CF_PET), so one learned rule serves glyphed and unglyphed bots alike. |
+| Starvation floor | The DEC-042 offline degeneracy gate gains a pet-down slice: summon must be argmax in **>=10-15%** of held-out pet-down summon-ready states before a deploy. An anti-starvation floor, not a behavior mandate - reactive deferral stays learnable in the remaining states. |
+| Fallback | If the floor is still missed after the DEC-042 anti-thrash budget, flip to DEC-030-style scaffolding + pool mask via a waiver DEC - pre-committed now, no re-litigation. |
+
+**Why:**
+- The original blockers (invisible precondition, no labels) are gone; what remains is coverage, which the pet reset and unglyphed share fix at the source.
+- A majority-threshold check would smuggle the scripted trigger back in as a gate condition and punish learned deferral; the low floor only distinguishes "action dead in the policy" from "action used selectively".
+- Exploitability of a fixed opener argues against scaffolding, not against learning: frozen opponents never punish predictability, and only a learned head can drift off the stock opener where deferral wins.
+
+**Consequences:** [#26](https://github.com/gamesh411/mod-playerbots/issues/26) closes; [#28](https://github.com/gamesh411/mod-playerbots/issues/28) (M2 execute) is fully unblocked.
+Implementation (pet dismissal in `RestoreForRematch`, between-duel summon suppression for bracket seats, both conf knobs + profile wiring on wotlk-playerbots-server, pet-down slice in the trainer's deploy gate) lands at M2 execute ([#28](https://github.com/gamesh411/mod-playerbots/issues/28)).
