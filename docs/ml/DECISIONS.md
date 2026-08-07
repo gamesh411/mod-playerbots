@@ -580,3 +580,36 @@ A demonstrator needs one command per stage that pins conf + artifact paths witho
 
 **Consequences:** #13 closes; landed in `wotlk-playerbots-server` `8168159`.
 Stage cards' conf-profile rows now name their replay profiles; `duel-m1` lands with the M1 freeze ([#23](https://github.com/gamesh411/mod-playerbots/issues/23)).
+
+### DEC-041 - 2026-08-07 - M1 freeze: mage uplift pass, warrior parity waiver
+
+**Status:** accepted  
+**Context:** [#23](https://github.com/gamesh411/mod-playerbots/issues/23) M1 execute, freeze gate per DEC-039.
+Recipe ran in full: bootstrap BC (1.17M/1.05M rows), DAgger x2 (1M+ fresh rows/class/round), one win-else-expert round, every deploy behind the offline degeneracy gate.
+Fresh epoch-2 M0<->M0 baseline: warrior 39.3% / mage 61.5% (2.7k matches, abilities stock tau=0, DEC-037 rules).
+
+**Gate trail (>= 2.4k matches per run, movement tau=0):**
+
+| Run | Warrior WR | Mage WR | Verdict |
+|-----|-----------|---------|---------|
+| M0<->M0 baseline | 39.3% | 61.5% | thresholds 41.3% / 63.5% (delta 0.02) |
+| M1 r3-eo warrior seat | 36.9% | - | FAIL (-2.4pp vs baseline) |
+| M1 r3-eo mage seat | - | **63.8%** | **PASS** (+2.3pp) |
+| Anti-thrash 1: reward-weighted CE warrior | 32.1% | - | FAIL (escalation lever hurt) |
+| Anti-thrash 2: r2-dagger warrior clone | 40.3% | - | parity (+1.0pp, within noise) |
+
+**Decision:** freeze M1 with an asymmetric head set - both seats learned, one uplift and one parity:
+
+| Piece | Rule |
+|------|------|
+| Canonical mage head | `artifacts/duel/m1/mage.pbml` = r3-eo (win-else-expert; +2.3pp WR, cast-band uptime 16.3% -> 19.0%, mean kite distance 9.7 -> 11.5y at gate) |
+| Canonical warrior head | `artifacts/duel/m1/warrior.pbml` = r2-dagger clone (parity waiver: no learned warrior head beat the scripted chase; the near-optimal 100ms re-aim chase leaves no headroom, and win-anchored labels only added noise - r3-eo -2.4pp, reward-weighted -7.2pp) |
+| Waiver rationale | Anti-thrash budget (2 rounds) exhausted per DEC-039; parity is certified by measurement, not assumed. The mage seat is where movement intelligence has room (kite geometry, snare windows) and it cleared the uplift gate properly. |
+| Snapshots kept | r0-bc, r1-dagger, r2-dagger, r3-eo, r3-eo-rw per class alongside the canonical slots |
+
+**Why:**
+- DEC-028/DEC-035 precedent: record the miss, freeze the best certified artifact, never ship an uncertified head.
+- A behavior clone of a near-optimal scripted policy measures at parity (+1.0pp, ~1 sigma); shipping it keeps the M1 story "both seats learned" without regression.
+- The mage uplift is corroborated by movement-quality metrics, not just WR.
+
+**Consequences:** freeze executed per DEC-019 (`stage/m1-movement-ranker`, manifest, stage card `m1-movement-ranker.md`, `duel-m1` replay profile in the orchestrator). Eval epoch 2 continues. #24 (M2 charting) unblocks; #25/#26 return to the frontier. Executor fidelity fixes landed during this execute (navmesh-validated probes/steps, dead-bot flag hygiene, rooted-unit packet guards) apply from `0508663c`/`faaf3687` onward; client-freeze investigation split out to [#27](https://github.com/gamesh411/mod-playerbots/issues/27).

@@ -8,7 +8,7 @@ Showcase learning on **Arms vs Frost** duels. Each stage freezes policy + conf +
 | [S1](s1-scripted-vocab-ranker.md) | Learned ranker | Same **queue** | Improves on stock within the bot’s scripted action set |
 | [S2](s2-spellbook-ranker.md) | Learned ranker | Full legal **spellbook** | Expert-style atomic abilities (think outside the scripted box) |
 | [M0](m0-movement-substrate.md) | Scripted intent movers on the packet executor | 9-way movement intent | Client-authentic movement substrate (strafe-kite, jump-turn); opens eval epoch 2 |
-| M1 | Learned movement-intent ranker | Same 9-way intent | Learns kiting/chasing from the M0 scripted teacher (DAgger) |
+| [M1](m1-movement-ranker.md) | Learned movement-intent ranker | Same 9-way intent | Learns kiting/chasing from the M0 scripted teacher (DAgger) |
 | M2 | Co-adapted ability head | Queue/spellbook on a movement-active world | Ability policy adapts to learned movement |
 
 **DEC-018** locks the S-ladder; **DEC-035/036** add the movement arc (M-track) after the S2 soft-fail pivot.
@@ -23,8 +23,8 @@ Hands-on feel-test while farming: [sparring-partners.md](sparring-partners.md) (
 | S1 | [#10](https://github.com/gamesh411/mod-playerbots/issues/10) / execute [#18](https://github.com/gamesh411/mod-playerbots/issues/18) | **soft-fail** (**DEC-028**) — no freeze tag; pivot to S2 |
 | S2 | [#11](https://github.com/gamesh411/mod-playerbots/issues/11) / execute [#19](https://github.com/gamesh411/mod-playerbots/issues/19) | **soft-fail** (**DEC-035**) — no freeze tag; movement-first pivot |
 | M0 | [#20](https://github.com/gamesh411/mod-playerbots/issues/20) / execute [#21](https://github.com/gamesh411/mod-playerbots/issues/21) | **frozen** (`stage/m0-packet-executor`, DEC-038 gate waiver at 84 %) |
-| M1 | [#22](https://github.com/gamesh411/mod-playerbots/issues/22) (design) / execute [#23](https://github.com/gamesh411/mod-playerbots/issues/23) | design next |
-| M2 | [#24](https://github.com/gamesh411/mod-playerbots/issues/24) | placeholder behind M1 |
+| M1 | [#22](https://github.com/gamesh411/mod-playerbots/issues/22) (design) / execute [#23](https://github.com/gamesh411/mod-playerbots/issues/23) | **frozen** (`stage/m1-movement-ranker`, DEC-041: mage uplift pass +2.3pp, warrior parity waiver) |
+| M2 | [#24](https://github.com/gamesh411/mod-playerbots/issues/24) | charting next |
 
 ### Out of scope (this curriculum)
 

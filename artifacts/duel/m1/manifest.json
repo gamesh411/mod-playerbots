@@ -1,0 +1,42 @@
+{
+  "stage": "m1",
+  "git_tag": "stage/m1-movement-ranker",
+  "git_sha": "see tag: freeze commit on exp/duel-rl-curriculum",
+  "policy": {
+    "kind": "per-class movement PBML + S0 ability sentinel",
+    "ability_head": "softmax-stock over scripted queue (S0 sentinel, DEC-022)",
+    "movement": {
+      "warrior": "warrior.pbml = r2-dagger snapshot (parity waiver, DEC-041)",
+      "mage": "mage.pbml = r3-eo snapshot (win-else-expert, uplift pass)",
+      "shape": "PBML1 in=90 hidden=64 out=9 vocab=0-8"
+    }
+  },
+  "conf_profile": "duel-farm + MlDuelMovement.Policy=ranker; demo via -ServerProfile duel-m1 (DEC-040)",
+  "data_tag": "ml_movement_duel_v1",
+  "stage_card": "docs/ml/curriculum/m1-movement-ranker.md",
+  "frozen_at": "2026-08-07",
+  "core_patch": "azerothcore Playerbot branch d5b4e6346 (bot movement-validation bypass, MOD_PLAYERBOTS)",
+  "freeze_gate": {
+    "protocol": "DEC-039: fresh epoch-2 M0<->M0 baseline, mixed-seat, delta 0.02, >=2.4k matches/run, movement tau=0, abilities stock tau=0, DEC-037 rules",
+    "baseline": {"warrior_wr": 0.393, "mage_wr": 0.615, "matches": 2721},
+    "mage_seat": {"head": "r3-eo", "wr": 0.638, "verdict": "PASS (+2.3pp)"},
+    "warrior_seat": {"head": "r2-dagger", "wr": 0.403, "verdict": "parity waiver (DEC-041); r3-eo 0.369 and reward-weighted 0.321 failed"},
+    "csv_baseline": "ml_decisions_duel_m1gate_base.csv",
+    "csv_mage": "ml_decisions_duel_m1gate_mage.csv",
+    "csv_warrior_frozen": "ml_decisions_duel_m1gate_warr3.csv"
+  },
+  "movement_quality": {
+    "mage_cast_band_uptime": {"m0": 0.163, "m1": 0.190},
+    "mage_mean_dist_yd": {"m0": 9.7, "m1": 11.5},
+    "warrior_melee_uptime": {"m0": 0.445, "m1": 0.410},
+    "teacher_disagreement_argmax": {"mage": 0.333, "warrior": 0.095}
+  },
+  "training_data": {
+    "round_b": "ml_m1_roundb (4 windows, 1.17M/1.05M rows)",
+    "dagger_r1": "ml_m1_round1 (3 windows)",
+    "dagger_r2": "ml_m1_round2 (4 windows)",
+    "expert_off": "ml_m1_eo (5 windows)",
+    "holdout": "match_id % 10 == 7 never trained"
+  },
+  "notes": "Executor fidelity fixes during execute: navmesh-validated probes/steps, dead-bot flag hygiene, rooted-unit packet guards. Client-freeze investigation split to #27. Eval epoch 2 continues."
+}
