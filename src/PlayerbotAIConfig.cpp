@@ -500,6 +500,11 @@ bool PlayerbotAIConfig::Initialize()
         sConfigMgr->GetOption<uint32>("AiPlayerbot.MlDuelMovement.LogEveryNSubticks", 5);
     mlDuelMovementLogFile =
         sConfigMgr->GetOption<std::string>("AiPlayerbot.MlDuelMovement.LogFile", "ml_movement_duel_v1.csv");
+    mlDuelMovementDisableJumpTurn =
+        sConfigMgr->GetOption<bool>("AiPlayerbot.MlDuelMovement.DisableJumpTurn", false);
+    mlDuelMovementFacingPackets = sConfigMgr->GetOption<bool>("AiPlayerbot.MlDuelMovement.FacingPackets", true);
+    mlDuelMovementSplineTransport =
+        sConfigMgr->GetOption<std::string>("AiPlayerbot.MlDuelMovementTransport", "spline") != "packets";
     mlModelPathDuelMovementWarrior =
         sConfigMgr->GetOption<std::string>("AiPlayerbot.MlModelPathDuelMovement.Warrior", "");
     mlModelPathDuelMovementMage = sConfigMgr->GetOption<std::string>("AiPlayerbot.MlModelPathDuelMovement.Mage", "");

@@ -391,6 +391,14 @@ public:
     // Movement CSV cadence: log every Nth subtick (500ms at N=5) plus on every intent change.
     uint32 mlDuelMovementLogEveryNSubticks;
     std::string mlDuelMovementLogFile;
+    // Client-freeze bisection kill-switches (debug): suppress jump-turn packets / SET_FACING
+    // packets (facing then updates silently server-side only).
+    bool mlDuelMovementDisableJumpTurn;
+    bool mlDuelMovementFacingPackets;
+    // DEC-045 observer transport: true = broadcast-only SMSG_MONSTER_MOVE spline synthesis
+    // (default); false = DEC-036 MSG_MOVE_* wire format ("packets") for A/B and rollback.
+    // Gates only the broadcast layer; executor stepping and server state are identical.
+    bool mlDuelMovementSplineTransport;
     // DEC-039 per-class movement heads (90-D / 9-logit PBML).
     std::string mlModelPathDuelMovementWarrior;
     std::string mlModelPathDuelMovementMage;
