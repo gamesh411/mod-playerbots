@@ -730,3 +730,25 @@ The spline client path is the one every creature in view runs constantly and is 
 
 **Consequences:** [#29](https://github.com/gamesh411/mod-playerbots/issues/29) closes; execution lands via [#30](https://github.com/gamesh411/mod-playerbots/issues/30) (no blocking edge either way with [#28](https://github.com/gamesh411/mod-playerbots/issues/28): the M2 farm runs headless and neither depends on the other; the demo/showcase path is what waits on the fix).
 The M1 stage card and FEATURES.md need no change (no feature or artifact moves); conf.dist gains the transport selector at #30.
+
+### DEC-046 - 2026-08-08 - Client-freeze transport hypothesis falsified; observer wire hygiene retained
+
+**Status:** accepted  
+**Context:** [#30](https://github.com/gamesh411/mod-playerbots/issues/30) executed DEC-045 and ran its acceptance.
+Leg 1 (control) passed: the packets transport reproduced the #27 freeze on the first park entry, full dumps captured.
+Leg 3 (throughput) passed: same-binary A/B shows spline >= packets at matched farm uptime (12,855 vs 11,544 duels/h early, 9,933 vs 4,314 late), every window 2-3x above the stale DEC-038 floor.
+Leg 2 (freeze soak) **failed three times**: spline as designed froze on entry 1; spline plus create-block flag masking froze on entry 4; spline plus masking, pre-teleport stop anchors and segment midpoint validation froze on entry 1.
+Every dump shows the identical #27 main-thread stack (client movement/collision integrator).
+A movement-off farm (Enable=0, rematch teleports still running) survived 12 consecutive park entries clean.
+
+**Decision:**
+
+- The #27/#29 causal model - flag extrapolation feeds the livelock, so a spline transport starves it - is **falsified**.
+The trigger is the *content* of executor-driven bot motion at farm scale; flag extrapolation and spline playback both feed the same client collision integrator.
+- The DEC-045 deliverables stay landed as observer wire hygiene: `MlDuelMovementTransport` selector (spline default), directional+falling flag masking in every movement-info serialization for executor bots, anchoring stop-spline before observer-facing teleports, and segment midpoint validation.
+These are correct wire behavior regardless of the freeze.
+- Frozen stages are unaffected (server-side substrate untouched throughout).
+- The freeze fix is **re-opened** as its own investigation ticket carrying the five-run experiment matrix and dumps; observer and demo sessions stay at-risk under *both* transports until it lands.
+- Open question for that ticket: demo default transport - the packet wire is aesthetically preferred (real client movement animations; user observation 2026-08-08), spline remains the conf default until that ticket decides.
+
+**Consequences:** #30 closes as executed-with-falsification; the root-cause ticket graduates onto the map frontier.
