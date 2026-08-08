@@ -259,11 +259,22 @@ void MlDuelMovement::Update(PlayerbotAI* botAI, uint32 elapsed)
             if (state->moving || state->airborne)
                 EnsureStopped(bot, *state);
             EraseState(bot->GetGUID());
+            // Legacy movers broadcast their motion themselves (MotionMaster splines);
+            // the wire mask must not outlive the executor.
+            bot->CustomData.Erase("mlDuelWireMoveFlagMask");
         }
         return;
     }
 
     MlBotMovementState* state = GetState(bot->GetGUID(), true);
+    // DEC-045: under spline transport, core masks this bot's directional+falling move flags in
+    // every observer-facing serialization (create block, heartbeat, teleport) - the #27 livelock
+    // is fed by flag extrapolation, and the world-entry create block otherwise still carries the
+    // executor's flags to fresh observers. Wire-only; server-side flags stay the frozen truth.
+    if (sPlayerbotAIConfig.mlDuelMovementSplineTransport)
+        bot->CustomData.GetDefault<DataMap::Base>("mlDuelWireMoveFlagMask");
+    else
+        bot->CustomData.Erase("mlDuelWireMoveFlagMask");
     state->accumMs += elapsed;
     uint32 const subtick = std::max<uint32>(50, sPlayerbotAIConfig.mlDuelMovementSubtickMs);
     if (state->accumMs < subtick)
@@ -517,19 +528,25 @@ void MlDuelMovement::UpdateBot(PlayerbotAI* botAI, MlBotMovementState& state, ui
         if (broadcast)
         {
             // Self-anchoring segment: start at the truth just applied, end at the obstacle-clamped
-            // prediction one intent horizon out (halved once near obstacles, else a facing anchor).
+            // prediction one intent horizon out. A segment must not cross geometry its endpoints
+            // straddle (observers integrate the straight line through it), so the full-length
+            // prediction also validates its midpoint; failure halves the horizon, then anchors.
             float const horizonSec = kSegmentHorizonMs / 1000.0f;
             float px = nx + std::cos(moveDir) * speed * horizonSec;
             float py = ny + std::sin(moveDir) * speed * horizonSec;
+            float const mx = nx + std::cos(moveDir) * speed * horizonSec * 0.5f;
+            float const my = ny + std::sin(moveDir) * speed * horizonSec * 0.5f;
+            float const mz = bot->GetMapHeight(mx, my, groundZ + 2.0f);
+            bool const midValid = std::fabs(mz - groundZ) <= 2.5f && OnNavMesh(bot, mx, my, mz);
             float pz = bot->GetMapHeight(px, py, groundZ + 2.0f);
             uint32 durationMs = kSegmentHorizonMs;
-            if (std::fabs(pz - groundZ) > 2.5f || !OnNavMesh(bot, px, py, pz))
+            if (!midValid || std::fabs(pz - groundZ) > 2.5f || !OnNavMesh(bot, px, py, pz))
             {
-                px = nx + std::cos(moveDir) * speed * horizonSec * 0.5f;
-                py = ny + std::sin(moveDir) * speed * horizonSec * 0.5f;
-                pz = bot->GetMapHeight(px, py, groundZ + 2.0f);
+                px = mx;
+                py = my;
+                pz = mz;
                 durationMs = kSegmentHorizonMs / 2;
-                if (std::fabs(pz - groundZ) > 2.5f || !OnNavMesh(bot, px, py, pz))
+                if (!midValid)
                 {
                     px = nx;
                     py = ny;
