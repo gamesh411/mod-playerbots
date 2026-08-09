@@ -9,13 +9,20 @@
  * this channel: a live spline makes VerifyMovementInfo drop every packet, so the executor backs
  * off whenever one is active (charge, knockback, fear) and resumes when it finalizes.
  *
- * DEC-045 observer transport: flag-extrapolated MSG_MOVE_* traffic feeds a main-thread livelock
- * in observing clients (#27), so the default broadcast is now broadcast-only SMSG_MONSTER_MOVE
- * synthesis — one self-anchoring spline segment per intent horizon, facing-angle mode, parabolic
- * jump arcs, and an anchoring stop-spline on halt/root/death. The spline exists only on the
- * wire: server-side stepping, flags and clamps are identical under both transports, so frozen
- * M0/M1 stages stay valid. AiPlayerbot.MlDuelMovementTransport = "packets" keeps the DEC-036
- * wire format for A/B and rollback.
+ * DEC-045 observer transport: the default broadcast is broadcast-only SMSG_MONSTER_MOVE synthesis
+ * — one self-anchoring spline segment per intent horizon, facing-angle mode, parabolic jump arcs,
+ * and an anchoring stop-spline on halt/root/death. The spline exists only on the wire: server-side
+ * stepping, flags and clamps are identical under both transports, so frozen M0/M1 stages stay
+ * valid. AiPlayerbot.MlDuelMovementTransport = "packets" keeps the DEC-036 wire format for A/B
+ * and rollback. (DEC-045 was motivated by a flag-extrapolation theory of the #27 observer freeze;
+ * DEC-046 falsified that theory and DEC-047 found the real cause — see below. The transport stays
+ * as wire hygiene and for its throughput edge, not as a freeze mitigation.)
+ *
+ * DEC-047 observer freeze: the client's per-frame movement stepper loops until the steps it takes
+ * cover the frame, and only honours MOVEMENTFLAG_ROOT for a unit carrying no moving or falling
+ * flag. ROOT beside FORWARD/STRAFE/FALLING therefore steps zero ms forever and hangs the client's
+ * main thread. Executor-owned flags must never outlive the state that justified them, and a root
+ * must abandon a jump in flight rather than ride it out — see UpdateBot and EnsureStopped.
  */
 
 #include "MlDuelMovement.h"
@@ -306,15 +313,14 @@ void MlDuelMovement::UpdateBot(PlayerbotAI* botAI, MlBotMovementState& state, ui
     Unit* foe = bot->duel->Opponent;
     state.decided = false;
     if (!foe || !foe->IsInWorld() || foe->GetMapId() != bot->GetMapId())
-        return;
-
-    float const dtSec = dtMs / 1000.0f;
-
-    if (state.airborne)
     {
-        ContinueJump(bot, state, dtMs);
+        // The duel is ending; hand movement back now rather than leaving executor flags on a
+        // unit no subtick will visit again before the duel-over sweep in Update().
+        EnsureStopped(bot, state);
         return;
     }
+
+    float const dtSec = dtMs / 1000.0f;
 
     // Executor-owned directional flags must not linger when we yield control (isMoving() gates
     // legacy pathing); FALLING is left alone here — knockback/fall handling owns it.
@@ -337,15 +343,24 @@ void MlDuelMovement::UpdateBot(PlayerbotAI* botAI, MlBotMovementState& state, ui
         return;
     }
 
+    // DEC-047: this must be decided before the airborne branch. The 3.3.5 client's per-frame
+    // movement integrator (`while (consumed < elapsed) consumed += Step()`) only consults ROOT
+    // when the unit carries no moving or falling flag; with both present the step advances zero
+    // ms and the loop never exits, hanging the observer's main thread (#27/#31). Riding a jump
+    // through an incoming root produces exactly that pair, so the jump is abandoned instead.
     if (!bot->IsAlive() || bot->IsRooted() || bot->HasUnitState(UNIT_STATE_ROOT) ||
         bot->HasUnitState(UNIT_STATE_LOST_CONTROL))
     {
-        // Root enforcement / control loss: the server already stopped us; packets would be rejected.
-        yieldMoveFlags();
-        // DEC-045: a stop-spline is broadcast-only, so it is never rejected — anchor observers at
-        // server truth instead of leaving them up to a segment's length off-truth for the root.
-        if (state.wireMoving)
-            BroadcastSplineStop(bot, state);
+        // Root enforcement / control loss: the server already stopped us; packets would be
+        // rejected. EnsureStopped strips the executor's flags — FALLING included — and anchors
+        // observers at server truth with a broadcast-only stop-spline, which is never rejected.
+        EnsureStopped(bot, state);
+        return;
+    }
+
+    if (state.airborne)
+    {
+        ContinueJump(bot, state, dtMs);
         return;
     }
 
@@ -775,6 +790,7 @@ void MlDuelMovement::EnsureStopped(Player* bot, MlBotMovementState& state)
 {
     bool const wasMoving = state.moving || state.airborne;
     bool const wasAirborne = state.airborne;
+    bool const rooted = bot->IsRooted() || bot->HasUnitState(UNIT_STATE_ROOT);
     state.moving = false;
     state.airborne = false;
     state.moveFlags = 0;
@@ -785,9 +801,13 @@ void MlDuelMovement::EnsureStopped(Player* bot, MlBotMovementState& state)
         // the STOP packet cannot be dispatched (root, live spline).
         bot->m_movementInfo.RemoveMovementFlag(MOVEMENTFLAG_FORWARD | MOVEMENTFLAG_BACKWARD |
                                                MOVEMENTFLAG_STRAFE_LEFT | MOVEMENTFLAG_STRAFE_RIGHT);
-        if (wasAirborne)
-            bot->m_movementInfo.RemoveMovementFlag(MOVEMENTFLAG_FALLING);
     }
+    // FALLING goes with them whenever the executor owns it, and whenever the bot is rooted —
+    // even if this stop is not ours to make. ROOT beside a moving or falling flag is the pair
+    // that wedges an observing client's movement integrator (DEC-047), and a rooted unit is not
+    // falling in the client's model either.
+    if (wasAirborne || rooted)
+        bot->m_movementInfo.RemoveMovementFlag(MOVEMENTFLAG_FALLING);
     if (sPlayerbotAIConfig.mlDuelMovementSplineTransport)
     {
         // Broadcast-only, so never rejected: one anchoring stop-spline at server truth on the
@@ -798,7 +818,7 @@ void MlDuelMovement::EnsureStopped(Player* bot, MlBotMovementState& state)
     }
     if (!wasMoving)
         return;
-    if (!bot->IsAlive() || bot->IsRooted() || bot->HasUnitState(UNIT_STATE_ROOT))
+    if (!bot->IsAlive() || rooted)
         return;  // dead / server-side root: flags are stripped, but a packet would be rejected
     SendMovePacket(bot, state, MSG_MOVE_STOP, 0, bot->GetPositionX(), bot->GetPositionY(),
                    bot->GetPositionZ(), bot->GetOrientation());
