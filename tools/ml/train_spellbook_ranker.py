@@ -60,6 +60,48 @@ def _header_feature_dim(fieldnames: list[str]) -> int:
     return n
 
 
+def _probe_csv(path: Path) -> tuple[bool, int, list[str] | None]:
+    """Sniff revision and feature width from the first line only.
+
+    Returns (has_header, feature_dim, meta), where meta is the positional column list for
+    the headerless revisions and None once the file carries its own header. feature_dim 0
+    means the file is empty and the caller should skip it.
+    """
+    with path.open(newline="", encoding="utf-8", errors="replace") as f:
+        sample = f.read(4096)
+    if not sample:
+        return True, 0, None
+    first = next(csv.reader([sample.splitlines()[0]]))
+    if "episode_id" in first:
+        return True, _header_feature_dim(first), None
+    if len(first) >= len(DUEL_V5_META) + DUEL_V5_FEATURES + 8:  # duel_v5 = 113 cols
+        return False, DUEL_V5_FEATURES, DUEL_V5_META
+    has_expert = len(first) >= 12 + LEGACY_FEATURE_DIM
+    return False, LEGACY_FEATURE_DIM, (DUEL_V4_META if has_expert else DUEL_V3_META)
+
+
+def _iter_rows(path: Path, *, has_header: bool, meta: list[str] | None, feature_dim: int):
+    """Stream one CSV as row dicts, reopening the file on each call.
+
+    Deliberately a generator rather than a list: outcomes and features need two passes, and
+    holding a farm log as dicts costs roughly 6 KB per row - 16 GB for a 1 GB duel_v6 log,
+    enough to OOM the box out from under the running server. Two streaming passes trade
+    re-reading the file for constant memory, and the file is only ever read from disk cache.
+    """
+    with path.open(newline="", encoding="utf-8", errors="replace") as f:
+        if has_header:
+            yield from csv.DictReader(f)
+            return
+        feat_start = len(meta)
+        for cols in csv.reader(f):
+            if len(cols) < feat_start + feature_dim:
+                continue
+            row = {meta[i]: cols[i] for i in range(len(meta))}
+            for i in range(feature_dim):
+                row[f"f{i}"] = cols[feat_start + i]
+            yield row
+
+
 def load_spellbook_rows(
     paths: list[Path],
     *,
@@ -82,101 +124,74 @@ def load_spellbook_rows(
     feature_dim: int | None = None
 
     for path in paths:
-        with path.open(newline="", encoding="utf-8", errors="replace") as f:
-            sample = f.read(4096)
-            f.seek(0)
-            has_header = "episode_id" in sample.splitlines()[0] if sample else False
-            if has_header:
-                reader = csv.DictReader(f)
-                rows = list(reader)
-                has_expert = "expert_action" in (reader.fieldnames or [])
-                path_dim = _header_feature_dim(reader.fieldnames or [])
-            else:
-                # Headerless: detect v3 vs v4 vs v5 by column count.
-                raw = list(csv.reader(f))
-                if not raw:
-                    continue
-                width = len(raw[0])
-                path_dim = LEGACY_FEATURE_DIM
-                if width >= len(DUEL_V5_META) + DUEL_V5_FEATURES + 8:  # duel_v5 = 113 cols
-                    has_expert = True
-                    meta = DUEL_V5_META
-                    path_dim = DUEL_V5_FEATURES
-                else:
-                    has_expert = width >= 12 + LEGACY_FEATURE_DIM
-                    meta = DUEL_V4_META if has_expert else DUEL_V3_META
-                feat_start = len(meta)
-                rows = []
-                for cols in raw:
-                    if len(cols) < feat_start + path_dim:
-                        continue
-                    d = {meta[i]: cols[i] for i in range(len(meta))}
-                    for i in range(path_dim):
-                        d[f"f{i}"] = cols[feat_start + i]
-                    rows.append(d)
+        has_header, path_dim, meta = _probe_csv(path)
+        if not path_dim:
+            continue
 
-            # Mixing widths would silently train on a ragged matrix; DEC-043 forbids zero-fill,
-            # so a mismatch is a fatal input error, not something to pad around.
-            if feature_dim is None:
-                feature_dim = path_dim
-            elif path_dim != feature_dim:
-                raise SystemExit(
-                    f"{path}: feature width {path_dim} != {feature_dim} from earlier inputs; "
-                    "do not mix CSV revisions in one training set"
-                )
+        # Mixing widths would silently train on a ragged matrix; DEC-043 forbids zero-fill,
+        # so a mismatch is a fatal input error, not something to pad around.
+        if feature_dim is None:
+            feature_dim = path_dim
+        elif path_dim != feature_dim:
+            raise SystemExit(
+                f"{path}: feature width {path_dim} != {feature_dim} from earlier inputs; "
+                "do not mix CSV revisions in one training set"
+            )
 
-            # Per-bot episode outcome: last terminal!=0 row per (match_id, bot_guid),
-            # same convention as eval_duel_winrate.py.
-            outcome: dict[tuple[str, str], float] = {}
-            for row in rows:
+        stream = dict(has_header=has_header, meta=meta, feature_dim=path_dim)
+
+        # Per-bot episode outcome: last terminal!=0 row per (match_id, bot_guid),
+        # same convention as eval_duel_winrate.py.
+        outcome: dict[tuple[str, str], float] = {}
+        for row in _iter_rows(path, **stream):
+            try:
+                term = float(row.get("terminal", "0") or 0)
+            except ValueError:
+                continue
+            if term != 0.0:
+                outcome[(row.get("match_id", ""), row.get("bot_guid", ""))] = term
+
+        for row in _iter_rows(path, **stream):
+            if row.get("in_duel", "1") not in ("1", "1.0", "true", "True"):
+                continue
+            action = (row.get("action") or "").strip()
+            if not _is_spell_id(action):
+                continue
+            if drop_meta and is_meta_action(action):
+                continue
+            if drop_duel_noise and is_duel_noise_action(action):
+                continue
+            if class_idx is not None:
                 try:
-                    term = float(row.get("terminal", "0") or 0)
+                    if float(row.get(f"f{class_idx}", 0) or 0) < 0.5:
+                        continue
                 except ValueError:
                     continue
-                if term != 0.0:
-                    outcome[(row.get("match_id", ""), row.get("bot_guid", ""))] = term
 
-            for row in rows:
-                if row.get("in_duel", "1") not in ("1", "1.0", "true", "True"):
-                    continue
-                action = (row.get("action") or "").strip()
-                if not _is_spell_id(action):
-                    continue
-                if drop_meta and is_meta_action(action):
-                    continue
-                if drop_duel_noise and is_duel_noise_action(action):
-                    continue
-                if class_idx is not None:
-                    try:
-                        if float(row.get(f"f{class_idx}", 0) or 0) < 0.5:
-                            continue
-                    except ValueError:
-                        continue
-
-                feats = []
-                ok = True
-                for i in range(feature_dim):
-                    try:
-                        feats.append(float(row.get(f"f{i}", 0) or 0))
-                    except ValueError:
-                        ok = False
-                        break
-                if not ok:
-                    continue
-
-                expert = (row.get("expert_action") or "").strip()
-                expert_id = int(expert) if _is_spell_id(expert) else -1
-
-                raw_match = (row.get("match_id") or "").strip()
-                xs.append(feats)
-                actions.append(int(action))
-                experts.append(expert_id)
-                match_ids.append(int(raw_match) if raw_match.isdigit() else -1)
-                wons.append(outcome.get((row.get("match_id", ""), row.get("bot_guid", "")), 0.0) > 0.0)
-                if max_rows and len(xs) >= max_rows:
+            feats = []
+            ok = True
+            for i in range(feature_dim):
+                try:
+                    feats.append(float(row.get(f"f{i}", 0) or 0))
+                except ValueError:
+                    ok = False
                     break
+            if not ok:
+                continue
+
+            expert = (row.get("expert_action") or "").strip()
+            expert_id = int(expert) if _is_spell_id(expert) else -1
+
+            raw_match = (row.get("match_id") or "").strip()
+            xs.append(feats)
+            actions.append(int(action))
+            experts.append(expert_id)
+            match_ids.append(int(raw_match) if raw_match.isdigit() else -1)
+            wons.append(outcome.get((row.get("match_id", ""), row.get("bot_guid", "")), 0.0) > 0.0)
             if max_rows and len(xs) >= max_rows:
                 break
+        if max_rows and len(xs) >= max_rows:
+            break
 
     if not xs:
         raise SystemExit("No spell-id duel rows kept (need ActionPolicy=ranker SpellPool=spellbook logs)")
