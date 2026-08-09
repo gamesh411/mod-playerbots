@@ -789,3 +789,22 @@ Both dumped flag words are this pair:
 - Frozen M0/M1 stages are unaffected: server-side stepping, intent selection and clamps are untouched. The change alters only what happens on root/death, which already halted motion.
 
 **Consequences:** the freeze is diagnosed and the fix is in, but the acceptance legs from #31 (>=20 park-hop entries plus >=2 h parked at full farm scale under the watchdog, and a demo-scale check) need the observer client and have not been run - they graduate to their own ticket, which also inherits the still-open demo default transport question.
+
+### DEC-048 - 2026-08-09 - DEC-047 verified on the client; MSG_MOVE_* packets become the default transport
+
+**Status:** accepted (supersedes the DEC-045 spline default)  
+**Context:** [#32](https://github.com/gamesh411/mod-playerbots/issues/32) ran the client-side acceptance the DEC-047 fix had not had.
+
+The fixed worldserver (module `6fe445a5`, core `97c36e46b`) was installed and the duel farm brought up on the **packets** transport - deliberately the harshest arm, since DEC-046 leg 1 froze it on park entry 1, and the arm we actually want to ship.
+Farm at full rate (99 bots online, decision CSV growing ~1 MB / 20 s), observer Wofi parked at the ally farm, procdump `-h -ma` armed.
+**20 of 20 park-hop cycles clean** (25 s away on the horde park, 75 s dwelling in the farm bubble), zero dumps written, client still responding at the end with normal CPU. The control for this run is historical rather than same-day: DEC-046 established that this exact farm, transport and client froze on the first entry.
+
+**Decision:**
+
+- DEC-047 is **confirmed on the client**. The freeze is gone on the transport that used to fail fastest.
+- `AiPlayerbot.MlDuelMovementTransport` defaults to **`"packets"`** - module built-in default, `playerbots.conf.dist`, and the orchestrator's `$Script:DuelFarmMlMovementTransport` (which the DEC-040 stage-replay profiles ride). This supersedes DEC-045's "spline is the default everywhere".
+Rationale: the MSG_MOVE_* wire is what a real client sends, so observers and demos render genuine movement animation rather than interpolated segments - the showcase reason, and the user's stated preference (2026-08-08).
+- `"spline"` remains selectable as a rollback path and for its throughput edge (DEC-046 leg 3), but it is no longer a freeze mitigation.
+- **Simplification candidate:** the spline transport now exists only as a workaround for a cause that turned out to be something else. Removing it deletes `BroadcastSplineSegment` / `BroadcastSplineStop`, the per-transport branching through `MlDuelMovement`, the `mlDuelWireMoveFlagMask` core marker and its two `Unit.cpp` sites, leaving one wire path instead of two. That is squarely in DEC-021 territory (import and keep only what the curriculum needs) and matters for upstreamability. Not done here - it is recorded on the map as a candidate so the removal is a deliberate decision with its own before/after soak, not a drive-by.
+
+**Consequences:** #32 closes as verified. The DEC-047 backstop in `Unit::BuildMovementPacket` is what keeps the flag pair off the wire under *either* transport, so it must outlive any spline removal. Outstanding from #32's original acceptance: the >=2 h parked soak and a demo-scale (10-bot DEC-040 profile) session were not run - the 20-cycle hop soak is the evidence on record.

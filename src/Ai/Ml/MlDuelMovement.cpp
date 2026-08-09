@@ -9,14 +9,16 @@
  * this channel: a live spline makes VerifyMovementInfo drop every packet, so the executor backs
  * off whenever one is active (charge, knockback, fear) and resumes when it finalizes.
  *
- * DEC-045 observer transport: the default broadcast is broadcast-only SMSG_MONSTER_MOVE synthesis
- * — one self-anchoring spline segment per intent horizon, facing-angle mode, parabolic jump arcs,
- * and an anchoring stop-spline on halt/root/death. The spline exists only on the wire: server-side
- * stepping, flags and clamps are identical under both transports, so frozen M0/M1 stages stay
- * valid. AiPlayerbot.MlDuelMovementTransport = "packets" keeps the DEC-036 wire format for A/B
- * and rollback. (DEC-045 was motivated by a flag-extrapolation theory of the #27 observer freeze;
- * DEC-046 falsified that theory and DEC-047 found the real cause — see below. The transport stays
- * as wire hygiene and for its throughput edge, not as a freeze mitigation.)
+ * Observer transport (AiPlayerbot.MlDuelMovementTransport): "packets" is the default (DEC-048) —
+ * the DEC-036 MSG_MOVE_* wire, i.e. the opcodes a real client sends, so observers render genuine
+ * movement animation. "spline" is the DEC-045 alternative: broadcast-only SMSG_MONSTER_MOVE
+ * synthesis, one self-anchoring segment per intent horizon, facing-angle mode, parabolic jump
+ * arcs, anchoring stop-spline on halt/root/death. Either way the choice is wire-only: server-side
+ * stepping, flags and clamps are identical, so frozen M0/M1 stages stay valid.
+ * Spline was introduced as a workaround for the #27 observer freeze under a flag-extrapolation
+ * theory. DEC-046 falsified that theory, DEC-047 (below) found the real cause, and packets soaked
+ * clean afterwards — so spline is now a rollback path, not a mitigation, and is a live candidate
+ * for removal.
  *
  * DEC-047 observer freeze: the client's per-frame movement stepper loops until the steps it takes
  * cover the frame, and only honours MOVEMENTFLAG_ROOT for a unit carrying no moving or falling
