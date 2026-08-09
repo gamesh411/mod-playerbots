@@ -54,7 +54,11 @@ void MlDecisionLogger::OnActionExecuted(PlayerbotAI* botAI, std::string const& a
     d.resolveAtMs = d.logTimeMs + sPlayerbotAIConfig.mlRewardDelayMs;
     d.features = AI_VALUE(CombatFeatureVector, "combat decision features");
     d.actionName = actionName;
-    d.expertActionName = expertAction.empty() ? actionName : expertAction;
+    // No guessing here: an empty expert means the caller had no teacher pick for this tick, so the
+    // column stays empty and training drops the row. Substituting the chosen action turned explore
+    // picks into expert labels across most of the M2 round-0 farm (DEC-049); callers whose executed
+    // action *is* the stock pick now say so explicitly.
+    d.expertActionName = expertAction;
     d.heuristicScore = heuristicScore;
     d.finalScore = finalScore;
     d.targetHpAtLog = static_cast<uint8>(d.features[CF_TARGET_HEALTH] * 100.0f);
@@ -120,7 +124,7 @@ void MlDecisionLogger::WriteRow(MlPendingDecision const& d, float reward, float 
     if (!out)
         return;
 
-    std::string expert = d.expertActionName.empty() ? d.actionName : d.expertActionName;
+    std::string expert = d.expertActionName;
     for (char& c : expert)
         if (c == ',')
             c = ';';
