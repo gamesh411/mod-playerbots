@@ -1,8 +1,8 @@
 /*
  * Copyright (C) 2016+ AzerothCore <www.azerothcore.org>, released under GNU AGPL v3 license.
  * DEC-036 M0 movement substrate: packet-driven intent executor + scripted intent movers.
- * DEC-045: the observer-facing broadcast defaults to SMSG_MONSTER_MOVE spline synthesis;
- * the DEC-036 MSG_MOVE_* wire format stays behind AiPlayerbot.MlDuelMovementTransport = "packets".
+ * DEC-048: the observer-facing broadcast defaults to the DEC-036 MSG_MOVE_* wire format again;
+ * DEC-045 SMSG_MONSTER_MOVE spline synthesis stays behind MlDuelMovementTransport = "spline".
  */
 
 #ifndef PLAYERBOTS_MLDUELMOVEMENT_H
