@@ -22,6 +22,7 @@
 #include "Timer.h"
 #include <cmath>
 #include <limits>
+#include <unordered_map>
 #include <vector>
 
 namespace
@@ -351,17 +352,37 @@ bool Engine::DoNextAction(Unit* /*unit*/, uint32 /*depth*/, bool minimal)
 
             // DAgger expert: S1 teacher τ=0 on queue ∩ legal spellbook (DEC-026).
             // Fallback: Softmax-stock τ=0 relevance when no teacher PBML.
+            //
+            // The intersection must be taken *before* the argmax. Ranking the whole queue first and
+            // projecting the winner afterwards throws the label away on every tick whose top stock
+            // pick is not a castable candidate (auto-attack, movement, meta) - and a missing expert
+            // makes the logger record the *chosen* action as the teacher's, so explore picks enter
+            // training as expert labels. Measured on the first M2 round-0 farm: 87% of warrior and
+            // 72% of mage in-duel rows (DEC-049).
+            std::unordered_map<uint32, std::string const*> castable;
+            castable.reserve(candidates.size());
+            for (MlDuelSpellCandidate const& cand : candidates)
+                castable.emplace(cand.spellId, &cand.actionName);
+
             std::string duelExpertAction;
             float bestExpert = -std::numeric_limits<float>::infinity();
-            std::string bestExpertName;
             bool const useTeacher = sMlScorer.HasTeacherFor(self->getClass());
             for (ActionBasket* candidate : queue.Baskets())
             {
                 if (!candidate || !candidate->getAction())
                     continue;
                 Action* candidateAction = InitializeAction(candidate->getAction());
-                if (!candidateAction || !candidateAction->isUseful() || !candidateAction->isPossible() ||
-                    !CombatDecisionUtil::IsLoggableCombatAction(candidateAction->getName()))
+                if (!candidateAction || !candidateAction->isUseful() || !candidateAction->isPossible())
+                    continue;
+
+                // Deliberately no IsLoggableCombatAction here (unlike the queue path, where it
+                // decides what may be logged at all). Membership in `castable` is the stronger and
+                // more relevant test - the teacher may only recommend what the head can pick - and
+                // the name heuristic covers damage/heal/defensive/CC/interrupt only, so it silently
+                // barred Summon Water Elemental, the very label DEC-044 relies on (DEC-049).
+                uint32 const spellId = AI_VALUE2(uint32, "spell id", candidateAction->getName());
+                auto const projected = spellId ? castable.find(spellId) : castable.end();
+                if (projected == castable.end())
                     continue;
 
                 float const expertLogit = useTeacher ? sMlScorer.ScoreDuelTeacher(botAI, candidateAction, features)
@@ -369,22 +390,7 @@ bool Engine::DoNextAction(Unit* /*unit*/, uint32 /*depth*/, bool minimal)
                 if (expertLogit > bestExpert)
                 {
                     bestExpert = expertLogit;
-                    bestExpertName = candidateAction->getName();
-                }
-            }
-            if (!bestExpertName.empty())
-            {
-                uint32 const expertSpellId = AI_VALUE2(uint32, "spell id", bestExpertName);
-                if (expertSpellId)
-                {
-                    for (MlDuelSpellCandidate const& cand : candidates)
-                    {
-                        if (cand.spellId == expertSpellId)
-                        {
-                            duelExpertAction = cand.actionName;
-                            break;
-                        }
-                    }
+                    duelExpertAction = *projected->second;
                 }
             }
 
@@ -621,7 +627,14 @@ bool Engine::DoNextAction(Unit* /*unit*/, uint32 /*depth*/, bool minimal)
                 {
                     LogAction("A:%s - OK", action->getName().c_str());
                     if (sPlayerbotAIConfig.mlLoggingEnabled)
-                        sMlDecisionLogger.OnActionExecuted(botAI, action->getName(), 0.0f, relevance, duelExpertAction);
+                    {
+                        // Empty here means Softmax-stock found no support and the engine fell
+                        // through to stock Peek, so the action executed *is* the τ=0 stock pick.
+                        // The logger no longer infers that (DEC-049), so state it.
+                        std::string const& expert =
+                            duelExpertAction.empty() ? action->getName() : duelExpertAction;
+                        sMlDecisionLogger.OnActionExecuted(botAI, action->getName(), 0.0f, relevance, expert);
+                    }
                     MultiplyAndPush(actionNode->getContinuers(), relevance, false, event, "cont");
                     lastRelevance = relevance;
                     delete actionNode;  // Safe memory management

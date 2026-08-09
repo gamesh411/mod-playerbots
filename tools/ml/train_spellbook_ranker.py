@@ -317,7 +317,7 @@ def main():
     ap.add_argument("--keep-meta", action="store_true")
     ap.add_argument("--max-rows", type=int, default=0)
     ap.add_argument("--imitate-expert", action="store_true",
-                    help="train CE on expert_action when present, else on logged action")
+                    help="train CE on expert_action, dropping rows that carry no teacher label")
     ap.add_argument("--drop-labels", type=int, nargs="*", default=[],
                     help="spell ids never used as CE labels (rows resolving to them are dropped); "
                          "e.g. 6603 once auto-attack became engine scaffolding (DEC-030)")
@@ -326,7 +326,8 @@ def main():
                          "counters marginal-mode argmax collapse onto always-legal actions")
     ap.add_argument("--label-scheme", choices=["action", "expert", "win-else-expert", "win-only"], default=None,
                     help="CE target: 'action' = logged action (behavior cloning); "
-                         "'expert' = expert_action fallback logged action (same as --imitate-expert); "
+                         "'expert' = expert_action, dropping rows that have none (same as "
+                         "--imitate-expert); "
                          "'win-else-expert' = logged action on WON episodes, else expert_action, "
                          "else drop the row (DEC-029 win-anchored self-imitation); "
                          "'win-only' = logged action on WON episodes, drop everything else "
@@ -368,7 +369,12 @@ def main():
     n_win_self = 0
     for i, aid in enumerate(action_ids.tolist()):
         if scheme == "expert":
-            label = expert_ids[i] if expert_ids[i] > 0 else aid
+            # An unlabelled row is a tick the teacher had no castable pick for, not a tick it
+            # agreed with the action. Falling back to `aid` trains the head on its own explore
+            # noise (DEC-049) - on the M2 round-0 warrior seat that would have been most rows.
+            if expert_ids[i] <= 0:
+                continue
+            label = int(expert_ids[i])
         elif scheme == "win-else-expert":
             if won[i] and aid in index and aid not in drop_labels:
                 label = aid

@@ -28,6 +28,8 @@ struct MlPendingDecision
     CombatFeatureVector features{};
     std::string actionName;
     // Softmax-stock τ=0 pick among legal queue candidates (DEC-025 DAgger label).
+    // Empty = this tick has no teacher label at all (DEC-049), which is a row training drops -
+    // not a synonym for "the teacher agreed with the action".
     std::string expertActionName;
     float heuristicScore = 0.0f;
     float finalScore = 0.0f;
