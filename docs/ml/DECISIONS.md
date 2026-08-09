@@ -752,3 +752,40 @@ These are correct wire behavior regardless of the freeze.
 - Open question for that ticket: demo default transport - the packet wire is aesthetically preferred (real client movement animations; user observation 2026-08-08), spline remains the conf default until that ticket decides.
 
 **Consequences:** #30 closes as executed-with-falsification; the root-cause ticket graduates onto the map frontier.
+
+### DEC-047 - 2026-08-09 - Client freeze root cause: ROOT beside a moving/falling flag wedges the client's movement stepper
+
+**Status:** accepted (root cause + fix landed; acceptance soak outstanding)  
+**Context:** [#31](https://github.com/gamesh411/mod-playerbots/issues/31) took the falsified DEC-046 matrix back to the freeze dumps.
+Static analysis of `Wow.exe` 3.3.5a around the recorded stacks (cdb over the packets, spline, masked-spline and anchored-spline dumps) identified the hang exactly, and the client-side state in the dumps matches two distinct executor code paths.
+
+**Mechanism:** the client steps a unit's movement for a frame with a loop at `Wow+0x2eacd5`..`Wow+0x2eae1d`:
+
+```
+consumed = 0
+do { consumed += Step(unit, elapsed - consumed) } while (consumed < elapsed)
+```
+
+The loop head tests the unit's movement flags against `0x00C010FF` (directional, turn, pitch, `FALLING`, ascend/descend).
+If any of those is set it always takes the stepping path; **`MOVEMENTFLAG_ROOT` (`0x800`) is only consulted on the fall-through**, i.e. only for a unit with no moving flag at all.
+A rooted unit that also carries a moving or falling flag therefore advances zero ms per iteration and the loop never terminates - a genuine infinite loop on the client's main fiber.
+That is the whole freeze: not a collision-geometry wedge, not a wire-format problem, and not memory pressure.
+
+Both dumped flag words are this pair:
+
+| dump | flags at unit+0x44 | executor path that produces it |
+|---|---|---|
+| #27 (packets) | `0x1800` = `ROOT｜FALLING` | root branch of `UpdateBot` yielded the directional flags but deliberately left `FALLING` |
+| #30 spline2/spline3 | `0x1801` = `ROOT｜FALLING｜FORWARD` | `state.airborne` branch ran *before* the root check, so a root landing mid jump-turn cleared nothing |
+
+**Decision:**
+
+- The invariant is **`MOVEMENTFLAG_ROOT` never coexists with a moving or falling flag on a bot the executor drives** - in server truth and on the wire.
+- `MlDuelMovement::UpdateBot`: the dead / rooted / lost-control check now precedes the `state.airborne` branch and routes through `EnsureStopped`, so an incoming root abandons a jump in flight instead of riding it out. A vanished opponent stops the executor the same way rather than returning with flags latched.
+- `MlDuelMovement::EnsureStopped`: `FALLING` is stripped whenever the executor owned it **or** the bot is rooted, no longer only on the airborne transition. This supersedes the DEC-036 "FALLING is left alone - knockback owns it" rule for rooted units.
+- `Unit::BuildMovementPacket`: a wire-only backstop strips the moving mask from any serialization that would carry `ROOT`, unconditionally rather than behind the executor marker, so the pair is unrepresentable in a create block under either transport.
+- Explains every observation DEC-046 left open: transport independence (packets carry the flags on the wire; spline makes the client synthesise `FORWARD`/`FALLING` from the segment it plays, including the parabolic jump arc), the movement-off farm running clean, and the intermittency - Frost Nova landing inside a ~0.8 s jump arc is the common trigger, and a single frame with the pair present is enough to hang an observer permanently.
+- DEC-045/DEC-046 wire hygiene stays landed; it was correct behavior but never addressed the wedge.
+- Frozen M0/M1 stages are unaffected: server-side stepping, intent selection and clamps are untouched. The change alters only what happens on root/death, which already halted motion.
+
+**Consequences:** the freeze is diagnosed and the fix is in, but the acceptance legs from #31 (>=20 park-hop entries plus >=2 h parked at full farm scale under the watchdog, and a demo-scale check) need the observer client and have not been run - they graduate to their own ticket, which also inherits the still-open demo default transport question.
