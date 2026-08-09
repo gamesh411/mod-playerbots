@@ -38,6 +38,11 @@ from train_ranker import (
 # follows the data, so a duel_v6 farm trains a 112-D M2 head with no zero-fill (DEC-042/043).
 LEGACY_FEATURE_DIM = 70
 HIDDEN = 64
+# Matches with match_id % 10 == 7 never reach the optimizer: they are the holdout the DEC-042
+# capacity sweep and the deploy gate score on. Same split as the movement trainer, so a match held
+# out of one channel is held out of both.
+HOLDOUT_MOD = 10
+HOLDOUT_REMAINDER = 7
 
 
 def _is_spell_id(s: str) -> bool:
@@ -63,11 +68,16 @@ def load_spellbook_rows(
     drop_duel_noise: bool,
     max_rows: int,
 ):
-    """Return (X[n,d], action_ids[n], expert_ids[n] or -1, won[n]); d is the CSV's feature width."""
+    """Return (X[n,d], action_ids[n], expert_ids[n] or -1, won[n], match_ids[n]).
+
+    d is the CSV's feature width. Holdout rows are returned too - the caller splits on
+    match_ids, so one pass over a multi-hundred-MB farm serves both training and scoring.
+    """
     xs: list[list[float]] = []
     actions: list[int] = []
     experts: list[int] = []
     wons: list[bool] = []
+    match_ids: list[int] = []
     class_idx = SELF_CLASS_F.get((self_class or "").lower())
     feature_dim: int | None = None
 
@@ -157,9 +167,11 @@ def load_spellbook_rows(
                 expert = (row.get("expert_action") or "").strip()
                 expert_id = int(expert) if _is_spell_id(expert) else -1
 
+                raw_match = (row.get("match_id") or "").strip()
                 xs.append(feats)
                 actions.append(int(action))
                 experts.append(expert_id)
+                match_ids.append(int(raw_match) if raw_match.isdigit() else -1)
                 wons.append(outcome.get((row.get("match_id", ""), row.get("bot_guid", "")), 0.0) > 0.0)
                 if max_rows and len(xs) >= max_rows:
                     break
@@ -173,6 +185,7 @@ def load_spellbook_rows(
         np.asarray(actions, dtype=np.int64),
         np.asarray(experts, dtype=np.int64),
         np.asarray(wons, dtype=bool),
+        np.asarray(match_ids, dtype=np.int64),
     )
 
 
@@ -253,6 +266,27 @@ def train_ce(
     return w1, b1, w2, b2
 
 
+def report_holdout(X, y, expert_ids, vocab: list[int], w1, b1, w2, b2, *, hidden: int):
+    """DEC-042 capacity-sweep scoreboard: CE and teacher agreement on never-trained matches."""
+    if not len(y):
+        print("holdout: none (no match_id % 10 == 7 rows survived label mapping)")
+        return
+    h = np.maximum(X @ w1.T + b1, 0.0)
+    logits = h @ w2.T + b2
+    logits -= np.max(logits, axis=1, keepdims=True)
+    probs = np.exp(logits)
+    probs /= np.sum(probs, axis=1, keepdims=True)
+    ce = float(np.mean(-np.log(np.clip(probs[np.arange(len(y)), y], 1e-8, 1.0))))
+    top = np.argmax(logits, axis=1)
+    acc = float(np.mean(top == y))
+    pred_ids = np.asarray([vocab[t] for t in top], dtype=np.int64)
+    labeled = expert_ids > 0
+    agree = float(np.mean(pred_ids[labeled] == expert_ids[labeled])) if labeled.any() else float("nan")
+    distinct = len(set(int(s) for s in pred_ids))
+    print(f"holdout hidden={hidden} rows={len(y)} ce={ce:.5f} argmax_acc={acc:.4f} "
+          f"teacher_agreement={agree:.4f} distinct_argmax={distinct}/{len(vocab)}")
+
+
 def write_pbml_multi(path: Path, w1, b1, w2, b2, vocab: list[int]):
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w") as f:
@@ -309,18 +343,21 @@ def main():
 
     scheme = args.label_scheme or ("expert" if args.imitate_expert else "action")
 
-    X, action_ids, expert_ids, won = load_spellbook_rows(
+    X, action_ids, expert_ids, won, match_ids = load_spellbook_rows(
         args.csv,
         self_class=args.self_class,
         drop_meta=not args.keep_meta,
         drop_duel_noise=args.drop_duel_noise,
         max_rows=args.max_rows,
     )
+    held = (match_ids % HOLDOUT_MOD) == HOLDOUT_REMAINDER
 
     if args.vocab_file:
         vocab = [int(line.strip()) for line in args.vocab_file.read_text().splitlines() if line.strip().isdigit()]
     else:
-        vocab = build_vocab(action_ids, expert_ids)
+        # Training rows only: a vocab widened by holdout actions would let the split leak into
+        # the head's output layer.
+        vocab = build_vocab(action_ids[~held], expert_ids[~held])
     if not vocab:
         raise SystemExit("Empty vocab")
     index = {sid: i for i, sid in enumerate(vocab)}
@@ -353,10 +390,19 @@ def main():
         keep.append(i)
     if not keep:
         raise SystemExit("No rows mapped into vocab")
-    X = X[np.asarray(keep)]
-    y = np.asarray(targets, dtype=np.int64)
-    print(f"rows={len(y)} vocab={len(vocab)} scheme={scheme} win_self_rows={n_win_self} "
-          f"won_frac={float(won.mean()):.3f} balance={args.balance_labels}")
+    keep = np.asarray(keep)
+    y_all = np.asarray(targets, dtype=np.int64)
+    kept_held = held[keep]
+    X_hold = X[keep[kept_held]]
+    y_hold = y_all[kept_held]
+    expert_hold = expert_ids[keep[kept_held]]
+    X = X[keep[~kept_held]]
+    y = y_all[~kept_held]
+    if not len(y):
+        raise SystemExit("No training rows outside the holdout; farm more matches")
+    print(f"rows={len(y)} holdout={len(y_hold)} vocab={len(vocab)} scheme={scheme} "
+          f"win_self_rows={n_win_self} won_frac={float(won.mean()):.3f} "
+          f"balance={args.balance_labels}")
 
     sample_w = None
     if args.balance_labels != "none":
@@ -369,6 +415,7 @@ def main():
         X, y, len(vocab), epochs=args.epochs, lr=args.lr, seed=args.seed, hidden=args.hidden,
         sample_w=sample_w,
     )
+    report_holdout(X_hold, y_hold, expert_hold, vocab, w1, b1, w2, b2, hidden=args.hidden)
     write_pbml_multi(args.out, w1, b1, w2, b2, vocab)
 
 

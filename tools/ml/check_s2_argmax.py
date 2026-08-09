@@ -12,6 +12,10 @@ import numpy as np
 CLASS_F = {"warrior": 12, "mage": 19}
 # CF_SELF_PET_COUNT, first column of the duel_v6 CF_PET pack (DEC-043).
 SELF_PET_COUNT_F = 90
+# The trainers keep match_id % 10 == 7 out of the optimizer; a gate scored on trained-on states
+# measures memorisation, so this one reads the same holdout.
+HOLDOUT_MOD = 10
+HOLDOUT_REMAINDER = 7
 
 
 def load_pbml_multi(path: Path):
@@ -50,6 +54,9 @@ def main():
     ap.add_argument("--csv", type=Path, required=True)
     ap.add_argument("--self-class", choices=list(CLASS_F), required=True)
     ap.add_argument("--max-states", type=int, default=20000)
+    ap.add_argument("--holdout-only", action=argparse.BooleanOptionalAction, default=True,
+                    help="score only matches the trainers held out (match_id %% 10 == 7). "
+                         "--no-holdout-only reads every match, for CSVs the head never trained on")
     ap.add_argument("--exclude", type=int, nargs="*", default=[],
                     help="spell ids masked at runtime by MlDuelSpellPool (toggles, stances); "
                          "their logits are set to -inf before argmax to mirror live behavior")
@@ -91,6 +98,11 @@ def main():
         for row in rows:
             if row.get("in_duel") not in ("1", "1.0"):
                 continue
+            match_id = (row.get("match_id") or "").strip()
+            if args.holdout_only and not (
+                match_id.isdigit() and int(match_id) % HOLDOUT_MOD == HOLDOUT_REMAINDER
+            ):
+                continue
             try:
                 if float(row.get(cf, 0) or 0) < 0.5:
                     continue
@@ -103,7 +115,8 @@ def main():
             if len(xs) >= args.max_states:
                 break
     if not xs:
-        sys.exit("no states sampled")
+        sys.exit("no states sampled" + (" (holdout is match_id % 10 == 7; pass --no-holdout-only "
+                                        "for a CSV the head never trained on)" if args.holdout_only else ""))
     X = np.asarray(xs, dtype=np.float32)
     H = np.maximum(X @ m["w1"].T + m["b1"], 0.0)
     logits = H @ m["w2"].T + m["b2"]
@@ -114,7 +127,8 @@ def main():
     top = np.argmax(logits, axis=1)
     counts = collections.Counter(int(m["vocab"][t]) for t in top)
     n = len(top)
-    print(f"{args.pbml.name}: states={n} distinct_argmax={len(counts)}")
+    scope = "holdout" if args.holdout_only else "all matches"
+    print(f"{args.pbml.name}: states={n} ({scope}) distinct_argmax={len(counts)}")
     for sid, c in counts.most_common(12):
         print(f"  spell {sid:6d}  {c / n * 100:5.1f}%")
     pred_ids = np.asarray([int(m["vocab"][t]) for t in top], dtype=np.int64)
