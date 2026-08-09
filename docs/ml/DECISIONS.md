@@ -808,3 +808,40 @@ Rationale: the MSG_MOVE_* wire is what a real client sends, so observers and dem
 - **Simplification candidate:** the spline transport now exists only as a workaround for a cause that turned out to be something else. Removing it deletes `BroadcastSplineSegment` / `BroadcastSplineStop`, the per-transport branching through `MlDuelMovement`, the `mlDuelWireMoveFlagMask` core marker and its two `Unit.cpp` sites, leaving one wire path instead of two. That is squarely in DEC-021 territory (import and keep only what the curriculum needs) and matters for upstreamability. Not done here - it is recorded on the map as a candidate so the removal is a deliberate decision with its own before/after soak, not a drive-by.
 
 **Consequences:** #32 closes as verified. The DEC-047 backstop in `Unit::BuildMovementPacket` is what keeps the flag pair off the wire under *either* transport, so it must outlive any spline removal. Outstanding from #32's original acceptance: the >=2 h parked soak and a demo-scale (10-bot DEC-040 profile) session were not run - the 20-cycle hop soak is the evidence on record.
+
+### DEC-049 - 2026-08-09 - The spellbook teacher label was mostly the bot's own explore pick
+
+**Status:** accepted  
+**Context:** [#28](https://github.com/gamesh411/mod-playerbots/issues/28) M2 execute, first spin of the DEC-042 round-0 BC farm (`ranker` + `spellbook`, no learner PBML, no teacher PBML, so `expert_action` is the stock rotation's tau=0 pick and the sole BC target).
+
+The first farm window looked healthy until the labels were checked against chance.
+Under uniform explore over 45 warrior / 217 mage candidates, `expert_action == action` should occur on ~2% / ~0.5% of rows.
+It occurred on **87.4% of warrior and 72.5% of mage** in-duel rows.
+Where the two differed, the expert column held only **5 distinct spell ids (warrior) / 7 (mage)** - the real stock picks - while across all rows it carried the action column's full 44/217-wide spread.
+The teacher label was overwhelmingly the bot's own random pick wearing the teacher's name, so BC round 0 would have cloned uniform noise and every downstream M2 round would have inherited it.
+
+Three compounding defects, all in the spellbook path:
+
+| # | Defect | Fix |
+|---|--------|-----|
+| 1 | The expert argmax ranked the **whole queue** and projected the winner onto the legal spellbook *afterwards*, so any tick whose top stock action is not castable (auto-attack, movement, meta) lost its label entirely. | Intersect first, rank second: build a `spellId -> candidate` map from the pool and skip queue actions that do not project. |
+| 2 | A missing label was not recorded as missing - `MlDecisionLogger` substituted the chosen action for an empty expert, at both capture and write. | The logger no longer guesses; empty means "no teacher pick this tick". The queue path, whose stock-Peek fallthrough executes the tau=0 pick, now passes it explicitly, so S0/S1 semantics are unchanged. `train_spellbook_ranker --label-scheme expert` drops unlabelled rows instead of falling back to the action. |
+| 3 | The expert search reused `IsLoggableCombatAction`, a name heuristic matching only damage/heal/defensive/CC/interrupt. It silently barred **Summon Water Elemental** - the exact label DEC-044's pet-down starvation floor is built on. | Dropped from this path: membership in the castable set is both stronger and the relevant test. The queue path keeps it, since there it decides what may be logged at all and S0 is frozen. |
+
+**Measured, same farm profile, ~850 duels per window:**
+
+| Metric | Before | After |
+|--------|--------|-------|
+| Warrior rows carrying a teacher label | 14.2% | **50.9%** |
+| Mage rows carrying a teacher label | 43.8% | **65.6%** |
+| Mage `expert == action` (chance ~0.5%) | 72.5% | **3.2%** |
+| Spell 31687 as `expert_action` | 0 | **409** |
+
+**Why:**
+- A label that cannot be distinguished from the action it labels is not a label; the information was destroyed at log time, so no trainer-side workaround existed.
+- Defect 3 would have surfaced as a DEC-044 gate failure and, after the anti-thrash budget, as the pre-committed scaffolding waiver - concluding "the head cannot learn to summon" from a name-matching artifact.
+- The remaining unlabelled rows are honest: mostly ticks where the warrior is rage-starved and the stock rotation has nothing castable. Legality masking means the head's preference in those states is never acted on, so the labelled slice is exactly the slice where the decision matters.
+
+**Consequences:** module `444f204e`. Round-0 data farmed before it is discarded (`ml_decisions_duel_m2_r0.pre-dec049*.csv`); the round-0 farm restarted clean.
+The same argmax-then-project shape fed **S2's DAgger rounds** (DEC-026 used this code with an S1 teacher PBML), so those rounds trained on contaminated labels too. This does not reopen S2 - waived under DEC-035 - but it is a second candidate cause for that plateau alongside the feature starvation DEC-035 named, and it means M2 is the first ability stage to train on clean teacher labels.
+Watch in round 0: the stock teacher wants Battle Stance on 51% of labelled warrior rows, because uniform explore keeps knocking the warrior out of it. That is a correct state-conditional label (CF_FORM makes it conditionable) and should thin out once the head stops switching stances at random, but the round-0 head will look stance-heavy.
