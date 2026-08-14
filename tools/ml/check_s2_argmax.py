@@ -48,6 +48,75 @@ def load_pbml_multi(path: Path):
     return d
 
 
+def score_pet_down_seats(args, m, cf: str, pet_f: str, summoned_at: dict):
+    """Per-seat summon verdicts over every pet-down summon-ready tick in scope.
+
+    Deliberately independent of --max-states: that cap exists to bound the argmax *distribution*
+    sample, but truncating mid-duel would undercount "summons at some point in the duel" for the
+    seats it cuts off. Scored in chunks so memory stays O(seats) rather than O(ticks).
+
+    Returns {seat: (summons_at_some_point, summons_at_opening_tick)}.
+    """
+    exclude = set(args.exclude or [])
+    excluded_idx = [j for j, sid in enumerate(m["vocab"]) if sid in exclude]
+    seats: dict[tuple[str, str], list] = {}
+    buf_x: list[list[float]] = []
+    buf_meta: list[tuple[tuple[str, str], float]] = []
+
+    def flush():
+        if not buf_x:
+            return
+        X = np.asarray(buf_x, dtype=np.float32)
+        H = np.maximum(X @ m["w1"].T + m["b1"], 0.0)
+        logits = H @ m["w2"].T + m["b2"]
+        for j in excluded_idx:
+            logits[:, j] = -np.inf
+        is_summon = np.asarray(
+            [int(m["vocab"][t]) == args.summon_spell for t in np.argmax(logits, axis=1)], dtype=bool
+        )
+        for (seat, t), summon in zip(buf_meta, is_summon):
+            rec = seats.get(seat)
+            if rec is None:
+                seats[seat] = [bool(summon), t, bool(summon)]
+                continue
+            rec[0] = rec[0] or bool(summon)
+            if t < rec[1]:
+                rec[1], rec[2] = t, bool(summon)
+        buf_x.clear()
+        buf_meta.clear()
+
+    with args.csv.open(newline="", encoding="utf-8", errors="replace") as f:
+        for row in csv.DictReader(f):
+            if row.get("in_duel") not in ("1", "1.0"):
+                continue
+            match_id = (row.get("match_id") or "").strip()
+            if args.holdout_only and not (
+                match_id.isdigit() and int(match_id) % HOLDOUT_MOD == HOLDOUT_REMAINDER
+            ):
+                continue
+            try:
+                if float(row.get(cf, 0) or 0) < 0.5:
+                    continue
+                if float(row.get(pet_f, 0) or 0) >= 0.5:
+                    continue
+                t = float(row.get("time_ms", 0) or 0)
+                feats = [float(row.get(f"f{i}", 0) or 0) for i in range(m["input_dim"])]
+            except ValueError:
+                continue
+            seat = (match_id, row.get("bot_guid", ""))
+            # After the seat's own first summon the spell is on a 3-min cooldown, so those ticks
+            # are pet-down-but-not-ready and must not count against the floor.
+            cast = summoned_at.get(seat)
+            if cast is not None and t > cast:
+                continue
+            buf_x.append(feats)
+            buf_meta.append((seat, t))
+            if len(buf_x) >= 8192:
+                flush()
+    flush()
+    return {seat: (rec[0], rec[2]) for seat, rec in seats.items()}
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--pbml", type=Path, required=True)
@@ -63,8 +132,8 @@ def main():
     ap.add_argument("--summon-spell", type=int, default=31687,
                     help="DEC-044 starvation-floor subject (Summon Water Elemental)")
     ap.add_argument("--pet-down-floor", type=float, default=None,
-                    help="DEC-044: minimum argmax share of --summon-spell over pet-down "
-                         "summon-ready states. Default 0.10 on duel_v6 CSVs, skipped on older "
+                    help="DEC-050: minimum share of pet-down duel-SEATS in which --summon-spell "
+                         "is argmax at some point. Default 0.25 on duel_v6 CSVs, skipped on older "
                          "revisions that have no CF_PET pack; pass a value to require the check "
                          "(or 0 to disable it)")
     args = ap.parse_args()
@@ -142,10 +211,11 @@ def main():
         agree = float(np.mean(pred_ids[mask] == exp[mask]))
         print(f"  expert-agreement: {agree * 100:.1f}% over {int(mask.sum())} labeled states")
 
-    # DEC-044 starvation floor: an anti-starvation check, not a behavior mandate - it only
-    # separates "summon is dead in this policy" from "summon is used selectively", so reactive
-    # deferral stays learnable in the remaining states.
-    floor = 0.10 if args.pet_down_floor is None else args.pet_down_floor
+    # DEC-050 starvation floor, per DUEL-SEAT. DEC-044 counted ticks, which cannot express "the
+    # policy uses this action" for a once-per-duel ability: a pet-down seat yields ~27 ready ticks
+    # and the summon happens once, so summoning promptly in *every* duel scores only ~3.7% of
+    # ticks - below DEC-044's 10% floor. The question the floor means to ask is per duel.
+    floor = 0.25 if args.pet_down_floor is None else args.pet_down_floor
     if floor > 0 and args.summon_spell in m["vocab"]:
         if not has_pet_pack:
             # Pre-duel_v6 data cannot answer "was the pet down" - the column did not exist. Say so
@@ -154,26 +224,17 @@ def main():
                 sys.exit(f"--pet-down-floor needs the duel_v6 CF_PET pack ({pet_f} missing from {args.csv})")
             print(f"  pet-down floor: SKIPPED - {args.csv.name} predates the CF_PET pack ({pet_f} absent)")
             return
-        ready = []
-        for i, row in enumerate(kept_rows):
-            try:
-                if float(row.get(pet_f, 0) or 0) >= 0.5:
-                    continue
-                t = float(row.get("time_ms", 0) or 0)
-            except ValueError:
-                continue
-            cast = summoned_at.get((row.get("match_id", ""), row.get("bot_guid", "")))
-            if cast is not None and t > cast:
-                continue
-            ready.append(i)
-
-        if not ready:
+        seats = score_pet_down_seats(args, m, cf, pet_f, summoned_at)
+        if not seats:
             sys.exit("pet-down floor: no pet-down summon-ready states sampled - widen the CSV window")
-        share = float(np.mean(pred_ids[ready] == args.summon_spell))
+        n_ever = sum(1 for ever, _ in seats.values() if ever)
+        n_open = sum(1 for _, opening in seats.values() if opening)
+        share = n_ever / len(seats)
         verdict = "PASS" if share >= floor else "FAIL"
-        print(f"  pet-down floor: spell {args.summon_spell} argmax in {share * 100:.1f}% of "
-              f"{len(ready)} pet-down summon-ready states "
+        print(f"  pet-down floor: spell {args.summon_spell} is argmax at some point in "
+              f"{share * 100:.1f}% of {len(seats)} pet-down duel-seats "
               f"(floor {floor * 100:.0f}%) -> {verdict}")
+        print(f"    report-only: argmax at the opening ready tick in {n_open / len(seats) * 100:.1f}%")
         if verdict == "FAIL":
             sys.exit(1)
 
