@@ -845,3 +845,47 @@ Three compounding defects, all in the spellbook path:
 **Consequences:** module `444f204e`. Round-0 data farmed before it is discarded (`ml_decisions_duel_m2_r0.pre-dec049*.csv`); the round-0 farm restarted clean.
 The same argmax-then-project shape fed **S2's DAgger rounds** (DEC-026 used this code with an S1 teacher PBML), so those rounds trained on contaminated labels too. This does not reopen S2 - waived under DEC-035 - but it is a second candidate cause for that plateau alongside the feature starvation DEC-035 named, and it means M2 is the first ability stage to train on clean teacher labels.
 Watch in round 0: the stock teacher wants Battle Stance on 51% of labelled warrior rows, because uniform explore keeps knocking the warrior out of it. That is a correct state-conditional label (CF_FORM makes it conditionable) and should thin out once the head stops switching stances at random, but the round-0 head will look stance-heavy.
+
+### DEC-050 - 2026-08-14 - The pet-down starvation floor counts duels, not ticks (supersedes DEC-044's floor)
+
+**Status:** accepted  
+**Context:** [#28](https://github.com/gamesh411/mod-playerbots/issues/28) M2 execute, round-0 BC deploy gate.
+The round-0 mage head scored **9.5%** against DEC-044's ">=10-15% of held-out pet-down summon-ready states" floor - a stable miss (9.7% at a 20k sample, 9.5% over the full 180,588-state holdout), not sampling noise.
+Investigating before reseeding or invoking DEC-044's pre-committed scaffolding fallback showed the head was not the thing failing.
+
+**The floor was unreachable by any correct policy.**
+Summon Water Elemental is cast once per duel, but the floor's denominator counts decision ticks.
+A pet-down duel-seat yields **26.8** summon-ready ticks on average, so a policy that summons exactly once, promptly, in *every* duel is argmax on only **3.7%** of them.
+DEC-044's 10% floor therefore demanded the summon be argmax on **2.7x** the ticks correct play would want it.
+The round-0 head's 9.5% already made it 2.6x more eager than once-per-duel play, and it still failed.
+
+Two further measurements on the same holdout confirmed the head was healthy:
+
+| Measurement | Value |
+|---|---|
+| Stock teacher's own summon share of *labelled* ready ticks | 6.7% (also below the 10% floor - a perfect clone fails it) |
+| Head's summon share of labelled ready ticks | 4.8% |
+| Head/teacher agreement on the binary "is it summon time" | 92.1% |
+| Summon is argmax **at some point** in a pet-down duel | **57.7%** of 5,134 seats |
+| Summon is argmax **at the opening ready tick** | 28.1% of seats |
+
+**Decision:**
+
+| Piece | Rule |
+|------|------|
+| Metric | The DEC-044 starvation floor is restated **per duel-seat**: the summon must be argmax at *some point* in a pet-down summon-ready seat. The per-tick share is retired as a gate and kept only as a printed diagnostic. |
+| Threshold | **>=25%** of held-out pet-down duel-seats. Round-0 BC clears it at 57.7%, so the floor sits well below observed healthy behaviour while still failing a head where the action has gone dead. |
+| Opening tick | Argmax-at-the-opening-tick is reported but **not** gated. Gating it would mandate the stock opener and punish exactly the learned deferral DEC-044 wanted to keep learnable (summoning into Cleave wastes the 3-min CD). |
+| Scope | Applies to every M2 deploy gate from round 0 onward, including the freeze gate. DEC-044's floor number is superseded; every other clause of DEC-044 (learned head membership, pet reset, unglyphed share, glyph-agnostic rule, scaffolding fallback) stands unchanged. |
+| Fallback | DEC-044's scaffolding waiver stays pre-committed and untouched, now triggered by the per-seat floor after the DEC-042 anti-thrash budget. |
+| Tooling | `check_s2_argmax.py` implements the per-seat floor, scored independently of `--max-states` (that cap bounds the argmax *distribution* sample; truncating a duel mid-way would undercount "summons at some point"). Streamed in chunks, so memory is O(seats). |
+
+**Why:**
+- A per-tick share cannot express "the policy uses this action" for a once-per-duel ability; the metric was measuring cast *frequency* where the intent was cast *presence*. The threshold was set before any duel_v6 data existed, so nothing contradicted it at the time.
+- DEC-044 states the floor's purpose outright - "it only distinguishes 'action dead in the policy' from 'action used selectively'". The per-seat form asks that question directly, and the round-0 head answers it at 57.7%.
+- Reseeding until a threshold clears would have been fitting the artifact to a broken measurement, and the scaffolding fallback would have concluded "the head cannot learn to summon" from a denominator error - the same failure shape DEC-049 caught one layer down, where a name heuristic nearly retired the summon on an artifact of `IsLoggableCombatAction`.
+- The anti-thrash budget is untouched by this: no round was rerun and no head retrained; the finding is a mis-specified gate, not a training failure.
+
+**Consequences:** module `e22488d3` (round-0 heads + gate streaming fix).
+Round-0 heads pass the restated gate and deploy to `artifacts/duel/m2/{warrior,mage}.pbml`; the orchestrator's `duel-farm` learner paths and log file move to the round-1 recipe (`ml_decisions_duel_m2_r1.csv`).
+The S-track's frozen gates are unaffected - the pet-down floor is a duel_v6-era check that never ran against them.
