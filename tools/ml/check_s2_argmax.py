@@ -75,6 +75,9 @@ def main():
     xs = []
     experts = []
     kept_rows = []
+    # Two streaming passes instead of materializing the log: a farm CSV held as row dicts costs
+    # roughly 6 KB per row - tens of GB for a duel_v6 file - which OOMs the box out from under a
+    # running farm (same trade the spellbook trainer makes).
     with args.csv.open(newline="", encoding="utf-8", errors="replace") as f:
         reader = csv.DictReader(f)
         has_pet_pack = pet_f in (reader.fieldnames or [])
@@ -83,8 +86,7 @@ def main():
         # cooldowns at rematch), after it the state is pet-down-but-on-cooldown and must not
         # count against the floor.
         summoned_at: dict[tuple[str, str], float] = {}
-        rows = list(reader)
-        for row in rows:
+        for row in reader:
             if (row.get("action") or "").strip() != str(args.summon_spell):
                 continue
             key = (row.get("match_id", ""), row.get("bot_guid", ""))
@@ -95,7 +97,8 @@ def main():
             if key not in summoned_at or t < summoned_at[key]:
                 summoned_at[key] = t
 
-        for row in rows:
+    with args.csv.open(newline="", encoding="utf-8", errors="replace") as f:
+        for row in csv.DictReader(f):
             if row.get("in_duel") not in ("1", "1.0"):
                 continue
             match_id = (row.get("match_id") or "").strip()
