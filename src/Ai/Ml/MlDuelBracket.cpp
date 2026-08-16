@@ -34,8 +34,9 @@ bool IsRealPlayerParticipant(Player* p)
 {
     if (!p)
         return true;
-    PlayerbotAI* ai = GET_PLAYERBOT_AI(p);
-    return !ai || ai->IsRealPlayer();
+    // Upstream's free IsRealPlayer means "no bot AI at all"; a selfbot is a human at the keyboard
+    // too, and the old PlayerbotAI::IsRealPlayer() this replaces tested exactly that.
+    return IsRealPlayer(p) || IsSelfBot(p);
 }
 
 std::vector<std::string> SplitCsv(std::string const& s, char sep)

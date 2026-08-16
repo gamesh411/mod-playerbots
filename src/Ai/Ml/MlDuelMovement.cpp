@@ -192,7 +192,7 @@ bool RankerIntent(PlayerbotAI* botAI, Player* bot, Unit* foe, uint8& outIntent)
     if (Player* foePlayer = foe->ToPlayer())
     {
         PlayerbotAI* foeAI = GET_PLAYERBOT_AI(foePlayer);
-        if (!foeAI || foeAI->IsRealPlayer())
+        if (!foeAI || IsSelfBot(foePlayer))
             tau = 0.0f;
     }
 

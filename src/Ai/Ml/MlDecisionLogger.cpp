@@ -37,7 +37,7 @@ void MlDecisionLogger::OnActionExecuted(PlayerbotAI* botAI, std::string const& a
     if (Player* foe = bot->duel->Opponent->ToPlayer())
     {
         PlayerbotAI* foeAI = GET_PLAYERBOT_AI(foe);
-        if (!foeAI || foeAI->IsRealPlayer())
+        if (!foeAI || IsSelfBot(foe))
             return;
     }
 
@@ -316,7 +316,7 @@ void MlDecisionLogger::LogDuelStartSnapshot(Player* bot, uint32 matchId)
         return;
 
     PlayerbotAI* botAI = GET_PLAYERBOT_AI(bot);
-    if (!botAI || botAI->IsRealPlayer())
+    if (!botAI || IsSelfBot(bot))
         return;
 
     if (bot->duel && bot->duel->Opponent)
@@ -324,7 +324,7 @@ void MlDecisionLogger::LogDuelStartSnapshot(Player* bot, uint32 matchId)
         if (Player* foe = bot->duel->Opponent->ToPlayer())
         {
             PlayerbotAI* foeAI = GET_PLAYERBOT_AI(foe);
-            if (!foeAI || foeAI->IsRealPlayer())
+            if (!foeAI || IsSelfBot(foe))
                 return;
         }
     }
@@ -425,7 +425,7 @@ void MlDecisionLogger::LogMovementRow(PlayerbotAI* botAI, uint8 intent, uint8 ex
     if (Player* foe = bot->duel->Opponent->ToPlayer())
     {
         PlayerbotAI* foeAI = GET_PLAYERBOT_AI(foe);
-        if (!foeAI || foeAI->IsRealPlayer())
+        if (!foeAI || IsSelfBot(foe))
             return;
     }
 

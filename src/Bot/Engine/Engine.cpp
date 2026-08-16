@@ -144,7 +144,7 @@ float DuelSoftmaxTau(Player* self, bool stockSeat = false)
         if (Player* foe = self->duel->Opponent->ToPlayer())
         {
             PlayerbotAI* foeAI = GET_PLAYERBOT_AI(foe);
-            if (!foeAI || foeAI->IsRealPlayer())
+            if (!foeAI || IsSelfBot(foe))
                 softmaxTau = 0.0f;
         }
     }
