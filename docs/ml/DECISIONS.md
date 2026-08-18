@@ -889,3 +889,39 @@ Two further measurements on the same holdout confirmed the head was healthy:
 **Consequences:** module `e22488d3` (round-0 heads + gate streaming fix).
 Round-0 heads pass the restated gate and deploy to `artifacts/duel/m2/{warrior,mage}.pbml`; the orchestrator's `duel-farm` learner paths and log file move to the round-1 recipe (`ml_decisions_duel_m2_r1.csv`).
 The S-track's frozen gates are unaffected - the pet-down floor is a duel_v6-era check that never ran against them.
+
+### DEC-051 - 2026-08-18 - M2 freezes on per-seat peaks; round 3 cancelled; WR leg required per deploy
+
+**Status:** accepted  
+**Context:** [#28](https://github.com/gamesh411/mod-playerbots/issues/28) M2 execute, round-3 go/no-go.
+The round-2 gate measured warrior parity (+1.0pp) / mage -18.8pp, and two sessions held the wired round-3 farm pending a decision on whether more win-anchored data would fix or compound the mage seat.
+Neither the r0-BC nor the r1-win heads had ever been WR-measured, so the trajectory was unknown.
+Backfilled tau=0 gate legs (identical protocol and fresh baseline as the round-2 gate; >=3.2k matches each; runner cross-validated by reproducing the round-2 frost leg at 35.4% vs the recorded 35.8%) completed it:
+
+| Head | Warrior WR (need >=47.9%) | Mage WR (need >=56.6%) |
+|------|---------------------------|-------------------------|
+| r0-BC | 33.0% | **75.2% - PASS (+20.6pp)** |
+| r1-win | **58.0% - PASS (+12.1pp)** | 49.7% |
+| r2-win | 46.9% | 35.8% |
+
+(Baseline: fresh S0-sentinel+M1, warrior 45.9% / mage 54.6%.)
+
+Each seat peaked at a different round, both peaks clear the DEC-042 gate by ~13 and ~23 sigma, and round 2 was a regression for **both** seats - deployed because the per-deploy degeneracy gate cannot rank policies (the loop-discipline finding from the round-2 gate, now quantified).
+
+**Decision:**
+
+| Piece | Rule |
+|------|------|
+| Round 3 | **Cancelled.** Both seats already own a gate-passing artifact; each seat's latest win-anchored round was a regression (warrior -11.1pp, mage -25.5pp then -13.9pp from peak). |
+| Freeze pair | `warrior.r1-win.pbml` + `mage.r0-bc.pbml` deploy to canonical and freeze per DEC-019 as `stage/m2-ability-coadapt`. |
+| Loop | The DEC-033-style win-anchored loop is closed for M2. Anti-thrash budget expires unspent - it exists to reach the gate, and the gate is reached. |
+| Deploy discipline (forward) | From any future round 1 onward, a head earns canonical deployment only with a tau=0 mixed-seat WR leg vs the stage baseline, in addition to the offline degeneracy gate. A WR leg after each of rounds 1-2 would have caught both regressions before farm hours were spent on their worlds. |
+| Showcase rows | dec033r3+M1 and dec033r3+M0 measured at freeze time per DEC-042, report-only, against the same fresh baseline (S0+M1); the M0 rows carry a baseline-mismatch caveat (scripted-movement world, M1-movement baseline). |
+
+**Why:**
+- The mage r0 peak is the DEC-049 label semantics working as designed: the BC target is stock's relevance argmax **intersected with the castable set**, so the clone plays stock's rotation without stock's wasted uncastable picks, and it summons the elemental through the learned head (3.4% of in-duel actions at tau=0). Behaviour cloning a strong teacher through a legality projection produced a better-than-teacher policy at round 0.
+- Win-only label quality tracks opponent strength, in both directions. The warrior's r1 jump (+25pp) trained on wins earned against the strong r0-BC mage (75.2%). The mage's r1 collapse trained on wins earned against the weak r0 warrior (33.0%). Round 2 then regressed both: the warrior trained on easy wins vs the collapsing r1 mage (won_frac 0.718 - junk positives), the mage on thin, survivorship-biased wins vs the strong r1 warrior (won_frac 0.242, 428k rows). One seat's degradation poisons the other seat's next round - opponent drift inside a single retrain channel, the same non-stationarity the alternation-depth-1 rule bounds between channels.
+- The offline degeneracy gate asks "is any action dead", never "is this policy good"; both r2 heads passed it and measured -11.1pp / -13.9pp against their predecessors. A per-deploy WR leg (~40 min at farm scale) is cheap against the ~6 h farm round it validates.
+
+**Consequences:** canonical `artifacts/duel/m2/{warrior,mage}.pbml` <- r1-win / r0-bc (sha-verified); DEC-019 freeze executed (manifest, stage card `docs/ml/curriculum/m2-ability-coadapt.md`, tag `stage/m2-ability-coadapt`, data tag `duel_v6`); `duel-m2` replay row lands in the orchestrator with a certified-era override (PetReset=1, UnglyphedMageShare=0.25 - M2 is the first stage certified in the DEC-044 world, so the DEC-040 "pre-DEC-044 replay world" default gains a per-stage exception); the wired round-3 farm recipe is retired; [#28](https://github.com/gamesh411/mod-playerbots/issues/28) closes.
+Gate-leg CSVs: `ml_decisions_duel_m2gate_{frost,arms}_{r0,r1}.csv`, control `ml_decisions_duel_m2gate_frost_r2repro.csv`, showcase `ml_decisions_duel_m2show_{arms,frost}_{m1,m0}.csv`.

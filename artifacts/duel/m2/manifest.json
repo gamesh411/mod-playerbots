@@ -1,0 +1,45 @@
+{
+  "stage": "m2",
+  "git_tag": "stage/m2-ability-coadapt",
+  "git_sha": "see tag: freeze commit on exp/duel-rl-curriculum",
+  "policy": {
+    "kind": "per-class spellbook multi-logit ability PBML + frozen M1 movement",
+    "ability": {
+      "warrior": "warrior.pbml = r1-win snapshot (win-only round 1, DEC-051)",
+      "mage": "mage.pbml = r0-bc snapshot (DEC-049 projected BC clone, DEC-051)",
+      "shape": "PBML1 in=112 hidden=256, out=45 (warrior) / 218 (mage), frozen r0 vocab (*.r0.vocab.txt)"
+    },
+    "movement": "frozen M1 canonical heads both seats (stage/m1-movement-ranker), transport packets (DEC-048)"
+  },
+  "conf_profile": "duel-farm ranker/spellbook + PetReset=1 + UnglyphedMageShare=0.25; demo via -ServerProfile duel-m2 (DEC-040 + certified-era override)",
+  "data_tag": "duel_v6",
+  "stage_card": "docs/ml/curriculum/m2-ability-coadapt.md",
+  "frozen_at": "2026-08-18",
+  "core_patch": "azerothcore Playerbot branch 97c36e46b (DEC-047 ROOT-flag fix)",
+  "freeze_gate": {
+    "protocol": "DEC-042: fresh S0-sentinel+M1 baseline, mixed-seat, delta 0.02, >=2.4k matches/run, tau=0 both channels, DEC-037 rules, DEC-044 world (PetReset, 25% unglyphed mages)",
+    "baseline": {"warrior_wr": 0.459, "mage_wr": 0.546, "matches": 10709},
+    "warrior_seat": {"head": "r1-win", "wr": 0.580, "verdict": "PASS (+12.1pp)", "r0_bc_wr": 0.330, "r2_win_wr": 0.469},
+    "mage_seat": {"head": "r0-bc", "wr": 0.752, "verdict": "PASS (+20.6pp)", "r1_win_wr": 0.497, "r2_win_wr": 0.358},
+    "runner_control": "round-2 frost leg reproduced at 0.354 vs recorded 0.358",
+    "csv_baseline": "ml_decisions_duel_m2gate_base.csv",
+    "csv_legs": "ml_decisions_duel_m2gate_{frost,arms}_{r0,r1}.csv + ml_decisions_duel_m2gate_frost_r2repro.csv + round-2 ml_decisions_duel_m2gate_{arms,frost}.csv"
+  },
+  "deploy_gates": {
+    "warrior_r1_win": "degeneracy 37/45 distinct argmax, combat kit (round-1 comment on #28)",
+    "mage_r0_bc": "degeneracy 20/218 distinct; DEC-050 pet-down floor 57.7% of held-out pet-down duel-seats (floor 25%)"
+  },
+  "showcase_rows": {
+    "note": "report-only per DEC-042; dec033r3 statue-era heads vs the same S0+M1 baseline; M0 rows carry a baseline-mismatch caveat",
+    "dec033r3_plus_m1": {"warrior_wr": 0.446, "mage_wr": 0.388},
+    "dec033r3_plus_m0": {"warrior_wr": 0.502, "mage_wr": 0.376},
+    "csv": "ml_decisions_duel_m2show_{arms,frost}_{m1,m0}.csv"
+  },
+  "training_data": {
+    "round_0_bc": "ml_decisions_duel_m2_r0.csv (4.01M rows, DEC-049 clean labels)",
+    "round_1": "ml_decisions_duel_m2_r1_boot1.csv + ml_decisions_duel_m2_r1.csv (4.02M rows)",
+    "round_2": "ml_decisions_duel_m2_r2_boot1.csv + ml_decisions_duel_m2_r2.csv (5.90M rows; rows after line 2842275 of r2 are post-sync verification-era, same farm config)",
+    "holdout": "match_id % 10 == 7 never trained"
+  },
+  "notes": "Loop closed at per-seat peaks (DEC-051): round 2 regressed both seats undetected by offline gates; per-deploy tau=0 WR legs are mandatory from M2 on. First stage certified in the DEC-044 world - the 39.3/61.5 M1-era baseline is not comparable."
+}
