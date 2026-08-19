@@ -525,10 +525,6 @@ bool PlayerbotAIConfig::Initialize()
     mlDuelMovementDisableJumpTurn =
         sConfigMgr->GetOption<bool>("AiPlayerbot.MlDuelMovement.DisableJumpTurn", false);
     mlDuelMovementFacingPackets = sConfigMgr->GetOption<bool>("AiPlayerbot.MlDuelMovement.FacingPackets", true);
-    // DEC-048: the MSG_MOVE_* wire is the default again - it is what a real client sends, and the
-    // #27 freeze that motivated the spline default turned out to be DEC-047, not the wire format.
-    mlDuelMovementSplineTransport =
-        sConfigMgr->GetOption<std::string>("AiPlayerbot.MlDuelMovementTransport", "packets") == "spline";
     mlModelPathDuelMovementWarrior =
         sConfigMgr->GetOption<std::string>("AiPlayerbot.MlModelPathDuelMovement.Warrior", "");
     mlModelPathDuelMovementMage = sConfigMgr->GetOption<std::string>("AiPlayerbot.MlModelPathDuelMovement.Mage", "");

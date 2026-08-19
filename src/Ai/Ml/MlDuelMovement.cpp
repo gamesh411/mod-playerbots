@@ -9,16 +9,12 @@
  * this channel: a live spline makes VerifyMovementInfo drop every packet, so the executor backs
  * off whenever one is active (charge, knockback, fear) and resumes when it finalizes.
  *
- * Observer transport (AiPlayerbot.MlDuelMovementTransport): "packets" is the default (DEC-048) —
- * the DEC-036 MSG_MOVE_* wire, i.e. the opcodes a real client sends, so observers render genuine
- * movement animation. "spline" is the DEC-045 alternative: broadcast-only SMSG_MONSTER_MOVE
- * synthesis, one self-anchoring segment per intent horizon, facing-angle mode, parabolic jump
- * arcs, anchoring stop-spline on halt/root/death. Either way the choice is wire-only: server-side
- * stepping, flags and clamps are identical, so frozen M0/M1 stages stay valid.
- * Spline was introduced as a workaround for the #27 observer freeze under a flag-extrapolation
- * theory. DEC-046 falsified that theory, DEC-047 (below) found the real cause, and packets soaked
- * clean afterwards — so spline is now a rollback path, not a mitigation, and is a live candidate
- * for removal.
+ * Observer transport: the DEC-036 MSG_MOVE_* wire — the opcodes a real client sends, so observers
+ * render genuine movement animation. The DEC-045 broadcast-only SMSG_MONSTER_MOVE spline synthesis
+ * was a workaround for the #27 observer freeze under a flag-extrapolation theory; DEC-046 falsified
+ * that theory, DEC-047 (below) found the real cause, packets soaked clean afterwards (DEC-048), and
+ * DEC-052 removed the spline path. Wire format never affected executor stepping, server flags or
+ * clamps, so frozen M0/M1 stages stay valid.
  *
  * DEC-047 observer freeze: the client's per-frame movement stepper loops until the steps it takes
  * cover the frame, and only honours MOVEMENTFLAG_ROOT for a unit carrying no moving or falling
@@ -29,7 +25,6 @@
 
 #include "MlDuelMovement.h"
 
-#include <atomic>
 #include <cmath>
 #include <unordered_set>
 
@@ -41,7 +36,6 @@
 #include "MlScorer.h"
 #include "MotionMaster.h"
 #include "MoveSpline.h"
-#include "MoveSplineFlag.h"
 #include "ObjectAccessor.h"
 #include "Opcodes.h"
 #include "Player.h"
@@ -67,14 +61,9 @@ constexpr float kArbiterLeashYd = 35.0f;     // stay inside the duel-flag out-of
 constexpr float kKiteRetreatYd = 15.0f;      // Frost: retreat below this (DEC-036)
 constexpr float kKiteMaxYd = 30.0f;          // Frost: approach beyond this / bank distance until this
 
-// DEC-045 spline transport: segments predict one intent horizon ahead (the 500 ms cadence the
-// packet transport heartbeats at), re-anchoring at server truth by construction every send.
-constexpr uint32 kSegmentHorizonMs = 500;
-// SMSG_MONSTER_MOVE type bytes (Movement::PacketBuilder MonsterMoveType).
-constexpr uint8 kMonsterMoveStop = 1;
-constexpr uint8 kMonsterMoveFacingAngle = 4;
-// Synthesized wire-only spline ids; high base keeps them clear of the core's MoveSplineInit ids.
-std::atomic<uint32> splineIdGen{0x71000000};
+// Steady-motion heartbeat cadence: observers extrapolate from move flags, so ~500 ms matches
+// what a real client broadcasts; between heartbeats the position integrates silently.
+constexpr uint32 kHeartbeatMs = 500;
 
 float NormalizeRel(float a)
 {
@@ -268,22 +257,11 @@ void MlDuelMovement::Update(PlayerbotAI* botAI, uint32 elapsed)
             if (state->moving || state->airborne)
                 EnsureStopped(bot, *state);
             EraseState(bot->GetGUID());
-            // Legacy movers broadcast their motion themselves (MotionMaster splines);
-            // the wire mask must not outlive the executor.
-            bot->CustomData.Erase("mlDuelWireMoveFlagMask");
         }
         return;
     }
 
     MlBotMovementState* state = GetState(bot->GetGUID(), true);
-    // DEC-045: under spline transport, core masks this bot's directional+falling move flags in
-    // every observer-facing serialization (create block, heartbeat, teleport) - the #27 livelock
-    // is fed by flag extrapolation, and the world-entry create block otherwise still carries the
-    // executor's flags to fresh observers. Wire-only; server-side flags stay the frozen truth.
-    if (sPlayerbotAIConfig.mlDuelMovementSplineTransport)
-        bot->CustomData.GetDefault<DataMap::Base>("mlDuelWireMoveFlagMask");
-    else
-        bot->CustomData.Erase("mlDuelWireMoveFlagMask");
     state->accumMs += elapsed;
     uint32 const subtick = std::max<uint32>(50, sPlayerbotAIConfig.mlDuelMovementSubtickMs);
     if (state->accumMs < subtick)
@@ -338,9 +316,6 @@ void MlDuelMovement::UpdateBot(PlayerbotAI* botAI, MlBotMovementState& state, ui
     if (!bot->movespline->Finalized())
     {
         yieldMoveFlags();
-        // The core's own monster-move packet owns the wire too; an anchor here would cancel it
-        // client-side, so just note our segment is no longer what observers are playing.
-        state.wireMoving = false;
         state.suppressed = false;
         return;
     }
@@ -354,8 +329,7 @@ void MlDuelMovement::UpdateBot(PlayerbotAI* botAI, MlBotMovementState& state, ui
         bot->HasUnitState(UNIT_STATE_LOST_CONTROL))
     {
         // Root enforcement / control loss: the server already stopped us; packets would be
-        // rejected. EnsureStopped strips the executor's flags — FALLING included — and anchors
-        // observers at server truth with a broadcast-only stop-spline, which is never rejected.
+        // rejected. EnsureStopped strips the executor's flags — FALLING included.
         EnsureStopped(bot, state);
         return;
     }
@@ -421,7 +395,6 @@ void MlDuelMovement::UpdateBot(PlayerbotAI* botAI, MlBotMovementState& state, ui
 
     uint32 const nowMs = getMSTime();
     bool const throttle = sPlayerbotAIConfig.mlDuelMovementThrottleBroadcast;
-    bool const spline = sPlayerbotAIConfig.mlDuelMovementSplineTransport;
     auto faceFoe = [&]()
     {
         float const off = std::fabs(NormalizeRel(bot->GetOrientation() - bearing));
@@ -430,15 +403,7 @@ void MlDuelMovement::UpdateBot(PlayerbotAI* botAI, MlBotMovementState& state, ui
         // Throttled: broadcast a facing update at most ~3/s, correct silently in between.
         bool const broadcast = sPlayerbotAIConfig.mlDuelMovementFacingPackets &&
                                (!throttle || (off > 0.25f && getMSTimeDiff(state.lastPacketMs, nowMs) >= 300));
-        if (spline)
-        {
-            // Server truth first; stationary turns render as zero-length facing segments.
-            SilentRelocate(bot, bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ(), bearing);
-            if (broadcast)
-                BroadcastSplineSegment(bot, state, bot->GetPositionX(), bot->GetPositionY(),
-                                       bot->GetPositionZ(), bearing, 100);
-        }
-        else if (broadcast)
+        if (broadcast)
             SendMovePacket(bot, state, MSG_MOVE_SET_FACING, 0, bot->GetPositionX(), bot->GetPositionY(),
                            bot->GetPositionZ(), bearing);
         else
@@ -533,51 +498,12 @@ void MlDuelMovement::UpdateBot(PlayerbotAI* botAI, MlBotMovementState& state, ui
 
     // Only state changes and a ~500 ms cadence need broadcasting; between them the position
     // integrates silently. This keeps per-bot packet rate at real-client levels instead of one
-    // per subtick (packets: observers extrapolate from move flags; spline: the segment plays out).
+    // per subtick (observers extrapolate from move flags).
     bool const stateChanged = !state.moving || state.moveFlags != moveFlags ||
                               std::fabs(NormalizeRel(facing - state.facing)) > 0.35f;
     bool const broadcast =
-        !throttle || stateChanged || getMSTimeDiff(state.lastPacketMs, nowMs) >= kSegmentHorizonMs;
-    if (spline)
-    {
-        if (!ApplyServerMoveState(bot, moveFlags, nx, ny, groundZ, facing))
-            return;
-        if (broadcast)
-        {
-            // Self-anchoring segment: start at the truth just applied, end at the obstacle-clamped
-            // prediction one intent horizon out. A segment must not cross geometry its endpoints
-            // straddle (observers integrate the straight line through it), so the full-length
-            // prediction also validates its midpoint; failure halves the horizon, then anchors.
-            float const horizonSec = kSegmentHorizonMs / 1000.0f;
-            float px = nx + std::cos(moveDir) * speed * horizonSec;
-            float py = ny + std::sin(moveDir) * speed * horizonSec;
-            float const mx = nx + std::cos(moveDir) * speed * horizonSec * 0.5f;
-            float const my = ny + std::sin(moveDir) * speed * horizonSec * 0.5f;
-            float const mz = bot->GetMapHeight(mx, my, groundZ + 2.0f);
-            bool const midValid = std::fabs(mz - groundZ) <= 2.5f && OnNavMesh(bot, mx, my, mz);
-            float pz = bot->GetMapHeight(px, py, groundZ + 2.0f);
-            uint32 durationMs = kSegmentHorizonMs;
-            if (!midValid || std::fabs(pz - groundZ) > 2.5f || !OnNavMesh(bot, px, py, pz))
-            {
-                px = mx;
-                py = my;
-                pz = mz;
-                durationMs = kSegmentHorizonMs / 2;
-                if (!midValid)
-                {
-                    px = nx;
-                    py = ny;
-                    pz = groundZ;
-                    durationMs = 100;
-                }
-            }
-            BroadcastSplineSegment(bot, state, px, py, pz, facing, durationMs);
-            state.wireMoving = px != nx || py != ny;
-        }
-        else
-            state.facing = facing;
-    }
-    else if (broadcast)
+        !throttle || stateChanged || getMSTimeDiff(state.lastPacketMs, nowMs) >= kHeartbeatMs;
+    if (broadcast)
     {
         uint16 opcode = MSG_MOVE_HEARTBEAT;
         if (!state.moving || state.moveFlags != moveFlags)
@@ -612,36 +538,20 @@ void MlDuelMovement::ContinueJump(Player* bot, MlBotMovementState& state, uint32
         if (std::fabs(groundZ - state.jumpStartZ) > 5.0f)
             groundZ = state.jumpStartZ;
         float const o = state.restoreFacingOnLand ? state.facingAfterLand : bot->GetOrientation();
-        if (sPlayerbotAIConfig.mlDuelMovementSplineTransport)
-        {
-            // The takeoff segment already played the whole arc; the restored facing rides the
-            // next ground segment (the horizon timer has expired by landing), so no packet here.
-            if (ApplyServerMoveState(bot, state.moveFlags, nx, ny, groundZ, o))
-                bot->m_movementInfo.fallTime = state.jumpElapsedMs;
-        }
-        else
-            SendMovePacket(bot, state, MSG_MOVE_FALL_LAND, state.moveFlags, nx, ny, groundZ, o,
-                           state.jumpElapsedMs);
+        SendMovePacket(bot, state, MSG_MOVE_FALL_LAND, state.moveFlags, nx, ny, groundZ, o,
+                       state.jumpElapsedMs);
         state.airborne = false;
         state.restoreFacingOnLand = false;
         return;
     }
 
     // Airborne preserves the velocity vector (DEC-036); intents cannot pre-empt the jump.
-    // Observers play the takeoff arc (spline: parabolic segment; packets: extrapolated from the
-    // takeoff packet), so mid-air updates stay silent — packets mode adds one corrective heartbeat.
+    // Observers play the takeoff arc extrapolated from the takeoff packet, so mid-air updates
+    // stay silent apart from one corrective heartbeat.
     float const zOff = kJumpVelocity * t - 0.5f * kGravity * t * t;
     float const z = state.jumpStartZ + std::max(0.0f, zOff);
-    if (sPlayerbotAIConfig.mlDuelMovementSplineTransport)
-    {
-        if (bot->movespline->Finalized())
-        {
-            SilentRelocate(bot, nx, ny, z, bot->GetOrientation());
-            bot->m_movementInfo.fallTime = state.jumpElapsedMs;
-        }
-    }
-    else if (!sPlayerbotAIConfig.mlDuelMovementThrottleBroadcast ||
-             getMSTimeDiff(state.lastPacketMs, getMSTime()) >= 400)
+    if (!sPlayerbotAIConfig.mlDuelMovementThrottleBroadcast ||
+        getMSTimeDiff(state.lastPacketMs, getMSTime()) >= 400)
         SendMovePacket(bot, state, MSG_MOVE_HEARTBEAT, state.moveFlags | MOVEMENTFLAG_FALLING, nx, ny, z,
                        bot->GetOrientation(), state.jumpElapsedMs, true, state.jumpDirWorld,
                        state.jumpSpeedXY);
@@ -657,26 +567,11 @@ void MlDuelMovement::StartJumpTurn(Player* bot, MlBotMovementState& state, float
         return;
 
     float const dir = bot->GetOrientation();
-    if (sPlayerbotAIConfig.mlDuelMovementSplineTransport)
-    {
-        // One parabolic segment covers the whole deterministic arc (intents cannot pre-empt the
-        // jump); its facing-angle is the post-flip bearing, so observers see the jump-turn at
-        // takeoff. Facing is restored on the next ground segment after landing.
-        if (!ApplyServerMoveState(bot, state.moveFlags | MOVEMENTFLAG_FALLING, bot->GetPositionX(),
-                                  bot->GetPositionY(), bot->GetPositionZ(), dir))
-            return;
-        float const landT = 2.0f * kJumpVelocity / kGravity;
-        float const speed = bot->GetSpeed(MOVE_RUN);
-        BroadcastSplineSegment(bot, state, bot->GetPositionX() + std::cos(dir) * speed * landT,
-                               bot->GetPositionY() + std::sin(dir) * speed * landT, bot->GetPositionZ(),
-                               newFacing, uint32(landT * 1000.0f), true, kGravity);
-        state.wireMoving = true;
-    }
     // Takeoff keeps the pre-flip facing; the caller flips orientation right after, and the next
     // airborne heartbeat carries it. Facing is restored at landing (atomic until landing).
-    else if (!SendMovePacket(bot, state, MSG_MOVE_JUMP, state.moveFlags | MOVEMENTFLAG_FALLING,
-                             bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ(), dir, 0, true,
-                             dir, bot->GetSpeed(MOVE_RUN)))
+    if (!SendMovePacket(bot, state, MSG_MOVE_JUMP, state.moveFlags | MOVEMENTFLAG_FALLING,
+                        bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ(), dir, 0, true,
+                        dir, bot->GetSpeed(MOVE_RUN)))
         return;
 
     state.airborne = true;
@@ -705,11 +600,9 @@ bool MlDuelMovement::HandleExternalFacing(Player* bot, WorldObject* target)
 
     if (state->airborne)
     {
-        // Mid jump-turn: allow the flip; landing restores the run facing. Spline transport keeps
-        // the wire silent mid-air — the takeoff segment already carries the post-flip facing.
+        // Mid jump-turn: allow the flip; landing restores the run facing.
         bot->SetOrientation(bot->GetAngle(target));
-        if (!sPlayerbotAIConfig.mlDuelMovementSplineTransport)
-            bot->SendMovementFlagUpdate(true);
+        bot->SendMovementFlagUpdate(true);
         return true;
     }
 
@@ -724,8 +617,7 @@ bool MlDuelMovement::HandleExternalFacing(Player* bot, WorldObject* target)
     if (state->airborne)
     {
         bot->SetOrientation(bot->GetAngle(target));
-        if (!sPlayerbotAIConfig.mlDuelMovementSplineTransport)
-            bot->SendMovementFlagUpdate(true);
+        bot->SendMovementFlagUpdate(true);
         return true;
     }
     return false;
@@ -810,14 +702,6 @@ void MlDuelMovement::EnsureStopped(Player* bot, MlBotMovementState& state)
     // falling in the client's model either.
     if (wasAirborne || rooted)
         bot->m_movementInfo.RemoveMovementFlag(MOVEMENTFLAG_FALLING);
-    if (sPlayerbotAIConfig.mlDuelMovementSplineTransport)
-    {
-        // Broadcast-only, so never rejected: one anchoring stop-spline at server truth on the
-        // transition to halted (root and death included), then silence.
-        if (state.wireMoving)
-            BroadcastSplineStop(bot, state);
-        return;
-    }
     if (!wasMoving)
         return;
     if (!bot->IsAlive() || rooted)
@@ -867,59 +751,4 @@ void MlDuelMovement::SilentRelocate(Player* bot, float x, float y, float z, floa
     bot->UpdatePosition(x, y, z, o);
     bot->m_movementInfo.pos.Relocate(x, y, z, o);
     bot->m_movementInfo.time = getMSTime();
-}
-
-bool MlDuelMovement::ApplyServerMoveState(Player* bot, uint32 moveFlags, float x, float y, float z,
-                                          float o)
-{
-    if (!bot->movespline->Finalized())
-        return false;
-    o = Position::NormalizeOrientation(o);
-    // Mirror of HandleMoverRelocation for the packet transport: flags replaced wholesale,
-    // position applied, movement info restamped — identical server state under both transports.
-    bot->m_movementInfo.SetMovementFlags(moveFlags);
-    bot->UpdatePosition(x, y, z, o);
-    bot->m_movementInfo.pos.Relocate(x, y, z, o);
-    bot->m_movementInfo.time = getMSTime();
-    return true;
-}
-
-void MlDuelMovement::BroadcastSplineSegment(Player* bot, MlBotMovementState& state, float destX,
-                                            float destY, float destZ, float facing, uint32 durationMs,
-                                            bool parabolic, float verticalAccel)
-{
-    // Layout per Movement::PacketBuilder::WriteMonsterMove for a linear one-waypoint path.
-    WorldPacket data(SMSG_MONSTER_MOVE, 64);
-    data << bot->GetGUID().WriteAsPacked();
-    data << uint8(0);
-    data << float(bot->GetPositionX()) << float(bot->GetPositionY()) << float(bot->GetPositionZ());
-    data << uint32(splineIdGen.fetch_add(1, std::memory_order_relaxed));
-    data << uint8(kMonsterMoveFacingAngle);
-    data << float(Position::NormalizeOrientation(facing));
-    data << uint32(parabolic ? Movement::MoveSplineFlag::Parabolic : Movement::MoveSplineFlag::None);
-    data << uint32(std::max<uint32>(durationMs, 1));
-    if (parabolic)
-    {
-        data << float(verticalAccel);
-        data << uint32(0);  // effect_start_time: the arc spans the whole segment
-    }
-    data << uint32(1);  // one waypoint: the segment destination
-    data << float(destX) << float(destY) << float(destZ);
-    bot->SendMessageToSet(&data, false);
-    state.facing = Position::NormalizeOrientation(facing);
-    state.lastPacketMs = getMSTime();
-}
-
-void MlDuelMovement::BroadcastSplineStop(Player* bot, MlBotMovementState& state)
-{
-    // Layout per Movement::PacketBuilder::WriteStopMovement.
-    WorldPacket data(SMSG_MONSTER_MOVE, 32);
-    data << bot->GetGUID().WriteAsPacked();
-    data << uint8(0);
-    data << float(bot->GetPositionX()) << float(bot->GetPositionY()) << float(bot->GetPositionZ());
-    data << uint32(splineIdGen.fetch_add(1, std::memory_order_relaxed));
-    data << uint8(kMonsterMoveStop);
-    bot->SendMessageToSet(&data, false);
-    state.wireMoving = false;
-    state.lastPacketMs = getMSTime();
 }

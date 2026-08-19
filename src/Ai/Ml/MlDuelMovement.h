@@ -1,8 +1,7 @@
 /*
  * Copyright (C) 2016+ AzerothCore <www.azerothcore.org>, released under GNU AGPL v3 license.
  * DEC-036 M0 movement substrate: packet-driven intent executor + scripted intent movers.
- * DEC-048: the observer-facing broadcast defaults to the DEC-036 MSG_MOVE_* wire format again;
- * DEC-045 SMSG_MONSTER_MOVE spline synthesis stays behind MlDuelMovementTransport = "spline".
+ * DEC-052: the DEC-036 MSG_MOVE_* wire is the only observer transport (DEC-045 spline removed).
  */
 
 #ifndef PLAYERBOTS_MLDUELMOVEMENT_H
@@ -72,9 +71,6 @@ struct MlBotMovementState
     float jumpStartZ = 0.0f;
     bool restoreFacingOnLand = false;
     float facingAfterLand = 0.0f;
-    // DEC-045 spline transport: a run/strafe/jump segment is live on the wire. The anchoring
-    // stop-spline sends once on the transition to halted/rooted/dead, then the wire goes silent.
-    bool wireMoving = false;
 };
 
 // Singleton executor: one 100 ms subtick per bot riding every core tick (ability loop untouched).
@@ -121,16 +117,6 @@ private:
                         float jumpDir = 0.0f, float jumpSpeedXY = 0.0f);
     // Server-side position/orientation update with no client broadcast (between heartbeats).
     void SilentRelocate(Player* bot, float x, float y, float z, float o);
-    // DEC-045 spline-transport twin of the packet handler's server-side effect: movement flags,
-    // position, orientation, timestamp — no wire traffic. False when an external spline owns motion.
-    bool ApplyServerMoveState(Player* bot, uint32 moveFlags, float x, float y, float z, float o);
-    // DEC-045 broadcast-only SMSG_MONSTER_MOVE synthesis: the spline exists only on the wire,
-    // no server-side MoveSpline is installed. destX==x etc. yields a zero-length facing anchor.
-    void BroadcastSplineSegment(Player* bot, MlBotMovementState& state, float destX, float destY,
-                                float destZ, float facing, uint32 durationMs, bool parabolic = false,
-                                float verticalAccel = 0.0f);
-    // One anchoring stop-spline at server truth (halt / root / death), then silence.
-    void BroadcastSplineStop(Player* bot, MlBotMovementState& state);
     void ComputeProbes(Player* bot, Unit* foe, MlBotMovementState& state);
 
     MlBotMovementState* GetState(ObjectGuid guid, bool create);

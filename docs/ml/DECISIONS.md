@@ -925,3 +925,28 @@ Each seat peaked at a different round, both peaks clear the DEC-042 gate by ~13 
 
 **Consequences:** canonical `artifacts/duel/m2/{warrior,mage}.pbml` <- r1-win / r0-bc (sha-verified); DEC-019 freeze executed (manifest, stage card `docs/ml/curriculum/m2-ability-coadapt.md`, tag `stage/m2-ability-coadapt`, data tag `duel_v6`); `duel-m2` replay row lands in the orchestrator with a certified-era override (PetReset=1, UnglyphedMageShare=0.25 - M2 is the first stage certified in the DEC-044 world, so the DEC-040 "pre-DEC-044 replay world" default gains a per-stage exception); the wired round-3 farm recipe is retired; [#28](https://github.com/gamesh411/mod-playerbots/issues/28) closes.
 Gate-leg CSVs: `ml_decisions_duel_m2gate_{frost,arms}_{r0,r1}.csv`, control `ml_decisions_duel_m2gate_frost_r2repro.csv`, showcase `ml_decisions_duel_m2show_{arms,frost}_{m1,m0}.csv`.
+
+### DEC-052 - 2026-08-19 - Packets-only observer wire: the DEC-045 spline transport is removed
+
+**Status:** accepted  
+**Context:** [#33](https://github.com/gamesh411/mod-playerbots/issues/33), executing the simplification candidate recorded in DEC-048.
+Spline existed only as a workaround for a freeze cause DEC-046 falsified; DEC-047 fixed the real cause (ROOT serialized beside a moving/falling flag) and DEC-048 verified the fix on the client with `packets` as the default everywhere, keeping spline as rollback only.
+One wire path instead of two is DEC-021 hygiene (curriculum-only, upstreamable).
+
+**Decision:**
+
+| Piece | Rule |
+|------|------|
+| Wire | The DEC-036 MSG_MOVE_* packet wire is the only observer transport. `BroadcastSplineSegment` / `BroadcastSplineStop` / `ApplyServerMoveState`, the `wireMoving` state, and every per-transport branch in `MlDuelMovement` are deleted. |
+| Conf knob | `AiPlayerbot.MlDuelMovementTransport` is removed outright (module option read, `playerbots.conf.dist`, orchestrator pin + profile verification row), not kept as a deprecated no-op: the orchestrator pins every farm/replay key explicitly, so a silent leftover knob would only invite a stale A/B edit. Unknown keys in an existing conf are ignored. |
+| Core marker | `mlDuelWireMoveFlagMask` and both `Unit.cpp` sites (serialization flag mask, pre-teleport stop-spline) are removed. The **DEC-047 backstop in `BuildMovementPacket` stays** - it is unconditional on the packets path and guards every serialization. |
+| Rollback | Via git history only (revert of the removal commits). DEC-048's "spline kept as rollback" clause is superseded. |
+
+**Why:**
+- Dead-by-default code on the observer wire is exactly the dormant-path category DEC-021 rules out, and it sat in the most delicate part of the module (the #27/#31 freeze surface).
+- The knob's only remaining use was an A/B whose question is answered (DEC-046 falsified the theory that motivated spline; DEC-048 verified packets clean at farm scale).
+
+**Consequences / verification:**
+- Frozen M0/M1/M2 stages stay valid: the transport was wire-only, executor stepping and server state are untouched, and the packets path is byte-identical after the removal.
+- Post-removal build: `duel-farm` boots clean (450 bots, no ERROR/FATAL), duels flow, and a 20-min DEC-038-style window measured **12,351 duels/hour** (floor from DEC-045 acceptance: 4,321; baseline 4,548), consistent with the packets arm of the #30 A/B - the throughput cost of losing spline is not observable at this scale.
+- The #32 acceptance soak (20/20 park-hop cycles clean on this same packets path) is the before-arm; the after-arm client soak rides on #33 (observer client access is out-of-band).
