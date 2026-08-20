@@ -950,3 +950,5 @@ One wire path instead of two is DEC-021 hygiene (curriculum-only, upstreamable).
 - Frozen M0/M1/M2 stages stay valid: the transport was wire-only, executor stepping and server state are untouched, and the packets path is byte-identical after the removal.
 - Post-removal build: `duel-farm` boots clean (450 bots, no ERROR/FATAL), duels flow, and a 20-min DEC-038-style window measured **12,351 duels/hour** (floor from DEC-045 acceptance: 4,321; baseline 4,548), consistent with the packets arm of the #30 A/B - the throughput cost of losing spline is not observable at this scale.
 - The #32 acceptance soak (20/20 park-hop cycles clean on this same packets path) is the before-arm; the after-arm client soak rides on #33 (observer client access is out-of-band).
+- After-arm landed 2026-08-20: **20/20 park-hop cycles clean** on the post-removal build with the observer (Wofi) in world, teleports confirmed by post-soak `saveall` position.
+This is the by-test verification that the `BuildMovementPacket` ROOT backstop survived: Frost Nova roots mid-kite generate exactly the ROOT-beside-moving pair DEC-047 guards, and the client message pump never hung.
