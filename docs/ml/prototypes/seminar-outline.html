@@ -1,0 +1,295 @@
+<!-- PROTOTYPE - throwaway outline deck for wayfinder ticket #38 (lunch seminar).
+     Three cuts of the talk, switchable via ?variant= / arrow keys / floating bar.
+     Numbers come from docs/ml/curriculum/ stage cards; nothing invented. -->
+<title>Duel Talk Runsheet</title>
+<style>
+  :root {
+    --bg: #f6f7f8;
+    --surface: #ffffff;
+    --ink: #171a1f;
+    --ink-2: #5a616c;
+    --ink-3: #8b929c;
+    --line: #e2e5e9;
+    --story: #2a78d6;
+    --film: #eb6834;
+    --concept: #1baf7a;
+    --notebook: #eda100;
+    --chart: #e87ba4;
+    --close: #008300;
+    --fail: #e34948;
+    --pill-bg: #171a1f;
+    --pill-ink: #f0f2f4;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #17191d;
+      --surface: #1e2126;
+      --ink: #f0f2f4;
+      --ink-2: #9aa3ad;
+      --ink-3: #6c737d;
+      --line: #2c3037;
+      --story: #3987e5;
+      --film: #d95926;
+      --concept: #199e70;
+      --notebook: #c98500;
+      --chart: #d55181;
+      --close: #008300;
+      --fail: #e66767;
+      --pill-bg: #f0f2f4;
+      --pill-ink: #171a1f;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #17191d;
+    --surface: #1e2126;
+    --ink: #f0f2f4;
+    --ink-2: #9aa3ad;
+    --ink-3: #6c737d;
+    --line: #2c3037;
+    --story: #3987e5;
+    --film: #d95926;
+    --concept: #199e70;
+    --notebook: #c98500;
+    --chart: #d55181;
+    --close: #008300;
+    --fail: #e66767;
+    --pill-bg: #f0f2f4;
+    --pill-ink: #171a1f;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+    font-size: 15px;
+    line-height: 1.5;
+  }
+  .mono { font-family: "Cascadia Code", Consolas, ui-monospace, monospace; font-variant-numeric: tabular-nums; }
+  main { max-width: 880px; margin: 0 auto; padding: 40px 20px 120px; }
+  header h1 { font-size: 30px; font-weight: 650; letter-spacing: -0.02em; margin: 0 0 6px; text-wrap: balance; }
+  header .q { color: var(--ink-2); max-width: 62ch; margin: 0 0 4px; }
+  header .react { color: var(--ink-2); max-width: 62ch; margin: 0; font-size: 13.5px; }
+  header .react strong { color: var(--ink); font-weight: 600; }
+
+  .variant-head { margin: 34px 0 14px; display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+  .variant-head h2 { font-size: 21px; font-weight: 650; margin: 0; letter-spacing: -0.01em; }
+  .variant-head .key { font-size: 12px; color: var(--ink-3); letter-spacing: 0.08em; text-transform: uppercase; }
+  .thesis { color: var(--ink-2); margin: 0 0 18px; max-width: 68ch; }
+
+  .tiles { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 18px; }
+  .tile {
+    background: var(--surface); border: 1px solid var(--line); border-radius: 6px;
+    padding: 8px 14px; min-width: 96px;
+  }
+  .tile .v { font-size: 19px; font-weight: 650; }
+  .tile .k { font-size: 11px; color: var(--ink-3); letter-spacing: 0.06em; text-transform: uppercase; }
+
+  .legend { display: flex; gap: 14px; flex-wrap: wrap; margin: 0 0 6px; font-size: 12px; color: var(--ink-2); }
+  .legend span { display: inline-flex; align-items: center; gap: 5px; }
+  .dot { width: 9px; height: 9px; border-radius: 2px; display: inline-block; }
+
+  .timeline { display: flex; gap: 2px; height: 26px; margin-bottom: 4px; border-radius: 4px; overflow: hidden; }
+  .timeline .seg { height: 100%; min-width: 3px; }
+  .scale { display: flex; justify-content: space-between; font-size: 11px; color: var(--ink-3); margin-bottom: 20px; }
+
+  table { width: 100%; border-collapse: collapse; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+  .table-wrap { overflow-x: auto; border-radius: 8px; }
+  th { text-align: left; font-size: 11px; letter-spacing: 0.07em; text-transform: uppercase; color: var(--ink-3); font-weight: 600; padding: 9px 12px; border-bottom: 1px solid var(--line); }
+  td { padding: 9px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  tr:last-child td { border-bottom: none; }
+  td.t { white-space: nowrap; color: var(--ink-2); font-size: 13px; width: 1%; }
+  td.t .dur { color: var(--ink-3); font-size: 11.5px; }
+  td.title { font-weight: 600; width: 30%; min-width: 170px; }
+  td.line { color: var(--ink-2); font-size: 13.5px; min-width: 260px; }
+  tr.fail td.title { box-shadow: inset 3px 0 0 var(--fail); }
+  .beat { display: inline-block; font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--fail); font-weight: 700; margin-left: 6px; }
+  .chips { white-space: nowrap; width: 1%; }
+  .chip { display: inline-flex; align-items: center; gap: 4px; font-size: 10.5px; letter-spacing: 0.05em; color: var(--ink-2); margin-right: 8px; }
+
+  .switcher {
+    position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%);
+    background: var(--pill-bg); color: var(--pill-ink);
+    border-radius: 999px; padding: 8px 10px; display: flex; align-items: center; gap: 6px;
+    box-shadow: 0 4px 18px rgba(0,0,0,0.28); z-index: 10; font-size: 13.5px;
+  }
+  .switcher button {
+    background: none; border: none; color: var(--pill-ink); cursor: pointer;
+    font-size: 16px; padding: 2px 8px; border-radius: 999px; line-height: 1;
+  }
+  .switcher button:hover { background: rgba(128,128,128,0.25); }
+  .switcher button:focus-visible { outline: 2px solid var(--pill-ink); outline-offset: 1px; }
+  .switcher .label { min-width: 190px; text-align: center; font-weight: 600; }
+</style>
+
+<main>
+  <header>
+    <h1>Duel Talk Runsheet</h1>
+    <p class="q">Three cuts of the 30-45 min lunch seminar - same locked arc (M2 cold open, chronological S0&rarr;M2, concepts at point of need, failure beats, QR close), different spine, emphasis, and time budget.</p>
+    <p class="react"><strong>React to:</strong> order, emphasis, and time allocation. Stealing pieces across cuts is the expected answer ("A's spine with B's notebook moments"). All numbers are the frozen stage-card values.</p>
+  </header>
+  <div id="variant-root"></div>
+</main>
+
+<nav class="switcher" aria-label="Variant switcher">
+  <button id="prev" aria-label="Previous variant">&#8592;</button>
+  <span class="label mono" id="switcher-label"></span>
+  <button id="next" aria-label="Next variant">&#8594;</button>
+</nav>
+
+<script>
+const TYPES = {
+  STORY:    { label: 'Story',    cssVar: '--story' },
+  FILM:     { label: 'Film',     cssVar: '--film' },
+  CONCEPT:  { label: 'Concept',  cssVar: '--concept' },
+  NOTEBOOK: { label: 'Notebook', cssVar: '--notebook' },
+  CHART:    { label: 'Chart',    cssVar: '--chart' },
+  CLOSE:    { label: 'Close/QR', cssVar: '--close' },
+};
+
+// dur in minutes; first entry of types[] colors the timeline segment
+const VARIANTS = [
+{
+  key: 'A', name: 'Campaign', total: 37,
+  thesis: 'Story spine. One chronological thread; each stage gets its beat and its gate chart in place; two notebook moments. The failures are cliffhangers that motivate the next stage.',
+  slides: [
+    { dur: 1.5, types: ['FILM'], title: 'Cold open: the M2 finale', line: 'Clip 5, no context. Two bots duel with learned casting and learned footwork - "nobody scripted this fight."' },
+    { dur: 2,   types: ['STORY'], title: 'What you just watched', line: 'A WoW private server, playerbots, one Arms warrior vs one Frost mage, a duel farm that runs itself.' },
+    { dur: 2,   types: ['STORY'], title: 'The experiment', line: 'Can a bot learn to duel from its own logs? Rules of the game: freeze gates, delta = 2pp, ~2,400 duels per verdict.' },
+    { dur: 2,   types: ['CONCEPT'], title: 'S0 - a baseline that explores', line: 'Policy, softmax, temperature: the stock bot brain plus a controlled dice roll.' },
+    { dur: 2.5, types: ['NOTEBOOK'], title: 'Notebook moment 1: the temperature dial', line: 'Live softmax toy - slide tau from 0 to 10 and watch decisions melt from argmax into noise.' },
+    { dur: 1.5, types: ['FILM'], title: 'Clip: the comic baseline', line: 'Clip 1 - S0 statues trading scripted rotations with exploratory hiccups.' },
+    { dur: 3,   types: ['CHART', 'STORY'], title: 'S1 - the first learner', line: 'Ranker on the scripted queue. Gate chart: mage +5.2pp PASS, warrior -3.7pp FAIL - and retraining made both worse.', beat: 'warrior regression' },
+    { dur: 2.5, types: ['CONCEPT'], title: 'S2 - the whole spellbook', line: 'From a curated queue to every legal spell: 49 warrior / 220 mage actions, legality masks per tick.' },
+    { dur: 1.5, types: ['FILM'], title: 'Clip: smart casting', line: 'Clip 2 - rank downshifts and picks no script enumerates.' },
+    { dur: 2.5, types: ['CHART', 'STORY'], title: 'The stacked FAIL and the plateau', line: 'First freeze: 0.0% / 0.1%. The win-anchored climb reaches 58.6% / 24.7%, then plateaus - the 70-D features describe a statue world.', beat: 'stacked FAIL' },
+    { dur: 2,   types: ['FILM', 'STORY'], title: 'M0 - the world starts moving', line: 'Clip 3 - client-authentic movement packets: strafe-kiting, jump-turns, 9-way intent. Pivot: fix the world before the brain.' },
+    { dur: 1.5, types: ['CHART'], title: 'The cost of moving', line: 'Throughput gate at 84.2%, waived. Data economics: the farm history runs 1,698 to 12,351 duels/hour.', beat: 'throughput waiver' },
+    { dur: 3,   types: ['CONCEPT', 'FILM'], title: 'M1 - learning to move', line: 'Behavior cloning then DAgger from the scripted teacher. Clip 4 - the mage kites wider (+2.3pp PASS); the warrior ties its near-optimal teacher.' },
+    { dur: 2.5, types: ['CONCEPT'], title: 'M2 - co-adaptation', line: 'Retrain abilities in the moving world with win-labeled data. Rounds oscillate: warrior peaks at round 1, mage at round 0, round 2 regresses both.', beat: 'round oscillation' },
+    { dur: 2.5, types: ['NOTEBOOK'], title: 'Notebook moment 2: co-adaptation dynamics', line: 'Live toy - two learners chasing each other; why "train more" is not monotone.' },
+    { dur: 2.5, types: ['FILM', 'CHART'], title: 'The payoff, annotated', line: 'Clip 5 again with callouts. First both-seat PASS: warrior +12.1pp, mage +20.6pp over stock.' },
+    { dur: 2,   types: ['CLOSE'], title: 'What it taught us + QR', line: 'Failures carried the plot. QR to the six-toy notebook and the repo; play over dessert.' },
+  ],
+},
+{
+  key: 'B', name: 'Lecture', total: 43,
+  thesis: 'Concept spine. Six mini-lessons, each introduced clean and then tested against the experiment; three notebook moments; uses the full 45-minute slot. Heaviest ML content of the three cuts.',
+  slides: [
+    { dur: 1.5, types: ['FILM'], title: 'Cold open: the M2 finale', line: 'Clip 5, no context - the destination before the road.' },
+    { dur: 2.5, types: ['STORY'], title: 'The lab', line: 'Server, playerbots, Arms vs Frost, a self-running duel farm producing millions of logged decisions.' },
+    { dur: 2,   types: ['CONCEPT'], title: 'Lesson 1: what is a policy?', line: 'State in, action out, every 100 ms. The duel as a decision loop.' },
+    { dur: 2,   types: ['CONCEPT'], title: 'Softmax and temperature', line: 'Exploration vs exploitation; why the baseline must explore to generate training data.' },
+    { dur: 3,   types: ['NOTEBOOK'], title: 'Notebook moment 1: temperature toy', line: 'Audience-visible: tau from 0 to 10 over a real S0 decision distribution.' },
+    { dur: 1.5, types: ['FILM'], title: 'Clip: the comic baseline', line: 'Clip 1 - what tau=10 looks like in the world.' },
+    { dur: 2,   types: ['CONCEPT'], title: 'Lesson 2: learning from logs', line: 'Supervised ranking on your own decisions - the S1 recipe: bootstrap, DAgger, expert-off.' },
+    { dur: 2.5, types: ['NOTEBOOK'], title: 'Notebook moment 2: winrate confidence', line: 'Why a verdict needs ~2,400 duels; the delta = 2pp gate as confidence intervals made visceral.' },
+    { dur: 2,   types: ['CHART'], title: 'S1 verdict', line: 'Mage +5.2pp PASS, warrior -3.7pp FAIL; the round-3 retrain regressed both. First lesson in evaluation honesty.', beat: 'warrior regression' },
+    { dur: 2,   types: ['CONCEPT'], title: 'Lesson 3: action spaces', line: 'Queue vs full spellbook (49 / 220 actions), legality masking, why bigger is much harder.' },
+    { dur: 1.5, types: ['FILM'], title: 'Clip: smart casting', line: 'Clip 2 - the spellbook policy finds actions outside the script.' },
+    { dur: 2,   types: ['CHART'], title: 'S2 verdict', line: 'Stacked FAIL 0.0% / 0.1%, win-anchored climb to 58.6% / 24.7%, then a plateau the features cannot see past.', beat: 'stacked FAIL' },
+    { dur: 2,   types: ['CONCEPT'], title: 'Lesson 4: features are the world', line: 'The 70-D statue world vs 90/112-D moving world - a policy cannot learn what its state cannot express.' },
+    { dur: 2,   types: ['FILM'], title: 'M0 - the world starts moving', line: 'Clip 3 + throughput aside: gate at 84.2% waived; farm history 1,698 to 12,351 duels/hour.', beat: 'throughput waiver' },
+    { dur: 2.5, types: ['CONCEPT'], title: 'Lesson 5: imitation and its limits', line: 'Behavior cloning, distribution shift, DAgger; when the student can and cannot beat the teacher.' },
+    { dur: 2,   types: ['FILM', 'CHART'], title: 'M1 verdict', line: 'Clip 4 - mage +2.3pp PASS with wider kiting (cast-band uptime 16.3% to 19.0%); warrior parity with a near-optimal teacher.' },
+    { dur: 2.5, types: ['CONCEPT'], title: 'Lesson 6: co-adaptation', line: 'Win-only labels track opponent strength; offline gates cannot see policy regressions - the round-2 collapse.', beat: 'round oscillation' },
+    { dur: 2,   types: ['CHART'], title: 'M2 verdict', line: 'Round trajectories per seat; frozen peaks: warrior +12.1pp, mage +20.6pp - first both-seat PASS.' },
+    { dur: 3,   types: ['NOTEBOOK', 'FILM'], title: 'Notebook moment 3 + finale', line: 'Full-loop toy (collect, train, gate, freeze) then clip 5 annotated - the loop that produced it.' },
+    { dur: 2,   types: ['CLOSE'], title: 'Six lessons + QR', line: 'One-line recap per lesson; QR to the notebook and repo.' },
+  ],
+},
+{
+  key: 'C', name: 'Highlight Reel', total: 29,
+  thesis: 'Film spine. The five clips carry the talk; one slide per stage with the concept as a callout and the chart as an inset; a single notebook moment. Tightest cut - ends before 30:00 and leaves lunch for Q&A and phone-notebook play.',
+  slides: [
+    { dur: 1.5, types: ['FILM'], title: 'Cold open: the M2 finale', line: 'Clip 5, no context.' },
+    { dur: 2,   types: ['STORY'], title: 'Setup in one slide', line: 'Server, bots, Arms vs Frost, the farm, and the rules: 2pp uplift or no freeze.' },
+    { dur: 2.5, types: ['FILM'], title: 'S0: the comic baseline', line: 'Clip 1 + softmax callout - the explore dial that makes training data.' },
+    { dur: 3,   types: ['NOTEBOOK'], title: 'Notebook moment: the temperature dial', line: 'The one live toy - tau from 0 to 10; QR goes up now and stays up.' },
+    { dur: 2.5, types: ['CHART'], title: 'S1: the first learner', line: 'Mage up +5.2pp, warrior down -3.7pp - and the retrain made it worse. Confidence callout: ~2,400 duels per verdict.', beat: 'warrior regression' },
+    { dur: 2.5, types: ['FILM'], title: 'S2: the whole spellbook', line: 'Clip 2 + action-space callout; inset: the 0.0% face-plant and the 58.6% / 24.7% plateau.', beat: 'stacked FAIL' },
+    { dur: 2.5, types: ['FILM'], title: 'M0: the world starts moving', line: 'Clip 3 + substrate callout; inset: throughput gate 84.2% waived.', beat: 'throughput waiver' },
+    { dur: 2.5, types: ['FILM'], title: 'M1: learned footwork', line: 'Clip 4 + imitation callout; mage kites wider and passes, warrior ties its teacher.' },
+    { dur: 2.5, types: ['CHART'], title: 'M2: co-adaptation', line: 'Round oscillation chart - warrior peaks r1, mage r0, round 2 regresses both; freeze at the peaks.', beat: 'round oscillation' },
+    { dur: 2.5, types: ['FILM'], title: 'Finale, annotated', line: 'Clip 5 with callouts: warrior +12.1pp, mage +20.6pp - both seats beat stock.' },
+    { dur: 2.5, types: ['STORY'], title: 'Five failures that taught more than the passes', line: 'Recap wall: regression, stacked FAIL, waiver, parity, oscillation - each bought a lesson.' },
+    { dur: 2,   types: ['CLOSE'], title: 'QR + play over dessert', line: 'Notebook QR again; the other five toys are for your phone.' },
+  ],
+},
+];
+
+function fmt(min) {
+  const m = Math.floor(min), s = Math.round((min - m) * 60);
+  return m + ':' + String(s).padStart(2, '0');
+}
+
+function render(v) {
+  const totalDur = v.slides.reduce((a, s) => a + s.dur, 0);
+  const filmMin = v.slides.filter(s => s.types[0] === 'FILM').reduce((a, s) => a + s.dur, 0);
+  const nbSlides = v.slides.filter(s => s.types[0] === 'NOTEBOOK');
+  const chartSlides = v.slides.filter(s => s.types.includes('CHART')).length;
+
+  const tiles = [
+    { k: 'runtime', v: fmt(totalDur) },
+    { k: 'slides', v: v.slides.length },
+    { k: 'film time', v: fmt(filmMin) },
+    { k: 'notebook moments', v: nbSlides.length },
+    { k: 'chart slides', v: chartSlides },
+  ].map(t => `<div class="tile"><div class="v mono">${t.v}</div><div class="k">${t.k}</div></div>`).join('');
+
+  const legend = Object.entries(TYPES).map(([k, t]) =>
+    `<span><span class="dot" style="background:var(${t.cssVar})"></span>${t.label}</span>`).join('');
+
+  const segs = v.slides.map(s =>
+    `<div class="seg" style="flex:${s.dur};background:var(${TYPES[s.types[0]].cssVar})" title="${s.title} (${s.dur} min)"></div>`).join('');
+
+  let t = 0;
+  const rows = v.slides.map(s => {
+    const start = t; t += s.dur;
+    const chips = s.types.map(k =>
+      `<span class="chip"><span class="dot" style="background:var(${TYPES[k].cssVar})"></span>${TYPES[k].label}</span>`).join('');
+    return `<tr${s.beat ? ' class="fail"' : ''}>
+      <td class="t mono">${fmt(start)}<br><span class="dur">${s.dur} min</span></td>
+      <td class="title">${s.title}${s.beat ? `<span class="beat">fail beat: ${s.beat}</span>` : ''}</td>
+      <td class="line">${s.line}</td>
+      <td class="chips">${chips}</td>
+    </tr>`;
+  }).join('');
+
+  return `
+    <div class="variant-head"><span class="key mono">Cut ${v.key}</span><h2>${v.name}</h2><span class="key mono">${fmt(totalDur)} of the 30-45 slot</span></div>
+    <p class="thesis">${v.thesis}</p>
+    <div class="tiles">${tiles}</div>
+    <div class="legend">${legend}</div>
+    <div class="timeline">${segs}</div>
+    <div class="scale mono"><span>0:00</span><span>${fmt(totalDur / 2)}</span><span>${fmt(totalDur)}</span></div>
+    <div class="table-wrap"><table>
+      <thead><tr><th>At</th><th>Slide</th><th>One-liner</th><th>Kind</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table></div>`;
+}
+
+const root = document.getElementById('variant-root');
+const label = document.getElementById('switcher-label');
+let idx = Math.max(0, VARIANTS.findIndex(v => v.key === (new URLSearchParams(location.search).get('variant') || 'A').toUpperCase()));
+
+function show(i) {
+  idx = (i + VARIANTS.length) % VARIANTS.length;
+  const v = VARIANTS[idx];
+  root.innerHTML = render(v);
+  label.textContent = `${v.key} - ${v.name}`;
+  const url = new URL(location);
+  url.searchParams.set('variant', v.key);
+  history.replaceState(null, '', url);
+  window.scrollTo(0, 0);
+}
+document.getElementById('prev').addEventListener('click', () => show(idx - 1));
+document.getElementById('next').addEventListener('click', () => show(idx + 1));
+document.addEventListener('keydown', e => {
+  const tag = document.activeElement && document.activeElement.tagName;
+  if (tag === 'INPUT' || tag === 'TEXTAREA' || (document.activeElement && document.activeElement.isContentEditable)) return;
+  if (e.key === 'ArrowLeft') show(idx - 1);
+  if (e.key === 'ArrowRight') show(idx + 1);
+});
+show(idx);
+</script>
