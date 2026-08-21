@@ -1,0 +1,558 @@
+<!-- PROTOTYPE (wayfinder #34): three variants of the duel-curriculum showcase dashboard,
+     switchable via ?variant= (A Campaign / B Scoreboard / C Ledger), floating bottom bar.
+     Throwaway code - the winning structure gets rebuilt properly under docs/ml/. -->
+<title>Arms vs Frost</title>
+<style>
+  :root {
+    --page: #f9f9f7;
+    --surface: #fcfcfb;
+    --ink: #0b0b0b;
+    --ink-2: #52514e;
+    --muted: #898781;
+    --grid: #e1e0d9;
+    --baseline: #c3c2b7;
+    --border: rgba(11, 11, 11, 0.10);
+    --warrior: #2a78d6;
+    --warrior-soft: #cde2fb;
+    --mage: #eb6834;
+    --mage-soft: #f7d5c5;
+    --good: #0ca30c;
+    --good-text: #006300;
+    --warn: #fab219;
+    --warn-text: #7a5200;
+    --crit: #d03b3b;
+    --crit-text: #a02020;
+    --track: #f0efec;
+    --code-bg: #f0efec;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:where(:not([data-theme="light"])) {
+      --page: #0d0d0d;
+      --surface: #1a1a19;
+      --ink: #ffffff;
+      --ink-2: #c3c2b7;
+      --muted: #898781;
+      --grid: #2c2c2a;
+      --baseline: #383835;
+      --border: rgba(255, 255, 255, 0.10);
+      --warrior: #3987e5;
+      --warrior-soft: #104281;
+      --mage: #d95926;
+      --mage-soft: #5c2510;
+      --good: #0ca30c;
+      --good-text: #0ca30c;
+      --warn: #fab219;
+      --warn-text: #fab219;
+      --crit: #d03b3b;
+      --crit-text: #e66767;
+      --track: #232322;
+      --code-bg: #232322;
+    }
+  }
+  :root[data-theme="dark"] {
+    --page: #0d0d0d;
+    --surface: #1a1a19;
+    --ink: #ffffff;
+    --ink-2: #c3c2b7;
+    --muted: #898781;
+    --grid: #2c2c2a;
+    --baseline: #383835;
+    --border: rgba(255, 255, 255, 0.10);
+    --warrior: #3987e5;
+    --warrior-soft: #104281;
+    --mage: #d95926;
+    --mage-soft: #5c2510;
+    --good: #0ca30c;
+    --good-text: #0ca30c;
+    --warn: #fab219;
+    --warn-text: #fab219;
+    --crit: #d03b3b;
+    --crit-text: #e66767;
+    --track: #232322;
+    --code-bg: #232322;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    background: var(--page);
+    color: var(--ink);
+    font: 15px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif;
+    margin: 0;
+    padding: 0 0 96px;
+  }
+  code, .mono {
+    font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+    font-size: 0.86em;
+  }
+  a { color: inherit; }
+  .wrap { max-width: 1060px; margin: 0 auto; padding: 0 24px; }
+
+  header.page-head { padding: 40px 0 8px; }
+  .eyebrow {
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--muted);
+  }
+  h1 { font-size: 30px; line-height: 1.15; margin: 6px 0 4px; text-wrap: balance; letter-spacing: -0.01em; }
+  .sub { color: var(--ink-2); max-width: 68ch; margin: 0; }
+
+  .proto-tag {
+    display: inline-block;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 2px 10px;
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-left: 10px;
+    vertical-align: middle;
+  }
+
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    border-radius: 999px;
+    padding: 2px 10px;
+    font-size: 12px;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  .badge::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+  .badge.frozen { color: var(--good-text); background: color-mix(in srgb, var(--good) 12%, transparent); }
+  .badge.softfail { color: var(--crit-text); background: color-mix(in srgb, var(--crit) 12%, transparent); }
+  .badge.waiver { color: var(--warn-text); background: color-mix(in srgb, var(--warn) 15%, transparent); }
+  .badge.sentinel { color: var(--ink-2); background: var(--track); }
+  .badge.sentinel::before { background: var(--muted); }
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 18px 20px;
+  }
+
+  /* ---- gate bars (shared) ---- */
+  .gbar { display: grid; grid-template-columns: 118px 1fr 128px; gap: 10px; align-items: center; margin: 7px 0; }
+  .gbar .who { font-size: 13px; color: var(--ink-2); text-align: right; }
+  .gbar .who b { color: var(--ink); font-weight: 600; }
+  .gbar .track { position: relative; height: 14px; background: var(--track); border-radius: 4px; }
+  .gbar .fill { position: absolute; inset: 2px auto 2px 0; border-radius: 3px; min-width: 3px; }
+  .gbar .fill.warrior { background: var(--warrior); }
+  .gbar .fill.mage { background: var(--mage); }
+  .gbar .fill.ghost { opacity: 0.38; }
+  .gbar .base {
+    position: absolute; top: -3px; bottom: -3px; width: 2px;
+    background: var(--ink); opacity: 0.55; border-radius: 1px;
+  }
+  .gbar .num { font-size: 13px; display: flex; gap: 8px; align-items: baseline; white-space: nowrap; }
+  .gbar .num b { font-weight: 650; font-variant-numeric: tabular-nums; }
+  .delta { font-weight: 650; font-variant-numeric: tabular-nums; }
+  .delta.up { color: var(--good-text); }
+  .delta.down { color: var(--crit-text); }
+  .delta.flat { color: var(--warn-text); }
+  .axisnote { font-size: 11.5px; color: var(--muted); margin-top: 8px; }
+
+  .legend { display: flex; gap: 16px; font-size: 12.5px; color: var(--ink-2); flex-wrap: wrap; }
+  .legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .swatch { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
+  .swatch.warrior { background: var(--warrior); }
+  .swatch.mage { background: var(--mage); }
+  .swatch.baseline { width: 2px; height: 12px; border-radius: 1px; background: var(--ink); opacity: 0.55; }
+
+  /* ---- variant A: campaign ---- */
+  .vA .chapter { position: relative; padding: 0 0 8px 34px; }
+  .vA .rail { position: absolute; left: 9px; top: 4px; bottom: -14px; width: 2px; background: var(--grid); }
+  .vA .chapter:last-child .rail { bottom: auto; height: 20px; }
+  .vA .dot {
+    position: absolute; left: 0; top: 3px; width: 20px; height: 20px; border-radius: 50%;
+    background: var(--surface); border: 2px solid var(--muted); z-index: 1;
+  }
+  .vA .dot.frozen { border-color: var(--good); }
+  .vA .dot.softfail { border-color: var(--crit); }
+  .vA .chapter h3 { margin: 0 0 2px; font-size: 18px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .vA .chapter .story { color: var(--ink-2); max-width: 66ch; margin: 4px 0 10px; }
+  .vA .chapter .panel { margin: 8px 0 26px; max-width: 720px; }
+  .vA .epoch {
+    margin: 6px 0 26px 34px; padding: 8px 14px;
+    border-left: 3px solid var(--baseline); color: var(--ink-2);
+    font-size: 13px; max-width: 64ch; background: var(--surface); border-radius: 0 8px 8px 0;
+  }
+  .vA .hero-line { display: flex; gap: 28px; flex-wrap: wrap; margin: 4px 0 10px; }
+  .vA .hero-line .kn { display: flex; flex-direction: column; }
+  .vA .hero-line .kn b { font-size: 26px; line-height: 1.1; font-weight: 650; }
+  .vA .hero-line .kn span { font-size: 12px; color: var(--muted); }
+
+  /* ---- variant B: scoreboard ---- */
+  .vB .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 14px; margin: 20px 0; }
+  .vB .kpi b { display: block; font-size: 32px; line-height: 1.05; font-weight: 650; margin-bottom: 2px; }
+  .vB .kpi .lab { font-size: 12.5px; color: var(--ink-2); }
+  .vB .kpi .ctx { font-size: 11.5px; color: var(--muted); margin-top: 6px; }
+  .vB .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 14px; }
+  @media (max-width: 780px) { .vB .grid2 { grid-template-columns: 1fr; } }
+  .vB h3 { margin: 2px 0 10px; font-size: 15px; }
+  .vB .chart-note { font-size: 11.5px; color: var(--muted); margin-top: 6px; }
+  .vB table { border-collapse: collapse; width: 100%; font-size: 13px; }
+  .vB th { text-align: left; color: var(--muted); font-weight: 600; font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.06em; padding: 4px 10px 6px 0; border-bottom: 1px solid var(--grid); }
+  .vB td { padding: 6px 10px 6px 0; border-bottom: 1px solid var(--grid); font-variant-numeric: tabular-nums; }
+  .vB tr:last-child td { border-bottom: none; }
+
+  /* ---- variant C: ledger ---- */
+  .vC .cards { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 18px; }
+  @media (max-width: 840px) { .vC .cards { grid-template-columns: 1fr; } }
+  .vC .stage-card h3 { margin: 0; font-size: 16px; display: flex; align-items: center; gap: 10px; justify-content: space-between; }
+  .vC .stage-card .tagline { color: var(--muted); font-size: 12px; margin: 2px 0 10px; }
+  .vC dl { display: grid; grid-template-columns: 92px 1fr; gap: 3px 12px; margin: 10px 0; font-size: 13px; }
+  .vC dt { color: var(--muted); }
+  .vC dd { margin: 0; overflow-wrap: anywhere; }
+  .vC .repro { background: var(--code-bg); border-radius: 6px; padding: 8px 10px; font-size: 12px; overflow-x: auto; white-space: pre; margin: 10px 0 4px; }
+  .vC .mstrip { display: flex; gap: 18px; flex-wrap: wrap; border-top: 1px solid var(--grid); margin-top: 10px; padding-top: 10px; }
+  .vC .mstrip .m b { font-size: 17px; font-weight: 650; font-variant-numeric: tabular-nums; }
+  .vC .mstrip .m span { display: block; font-size: 11px; color: var(--muted); }
+
+  /* ---- svg charts ---- */
+  svg text { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
+  .sv-grid { stroke: var(--grid); stroke-width: 1; }
+  .sv-axis { fill: var(--muted); font-size: 11px; }
+  .sv-lab { fill: var(--ink-2); font-size: 11.5px; }
+  .sv-val { fill: var(--ink); font-size: 11.5px; font-weight: 600; }
+
+  /* ---- switcher ---- */
+  .switcher {
+    position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%);
+    display: flex; align-items: center; gap: 4px;
+    background: var(--ink); color: var(--page);
+    border-radius: 999px; padding: 6px 8px;
+    box-shadow: 0 6px 24px rgba(0, 0, 0, 0.28);
+    z-index: 50; user-select: none;
+  }
+  .switcher button {
+    all: unset; cursor: pointer; width: 30px; height: 30px; border-radius: 50%;
+    display: grid; place-items: center; font-size: 15px;
+  }
+  .switcher button:hover { background: rgba(255, 255, 255, 0.16); }
+  .switcher button:focus-visible { outline: 2px solid var(--page); }
+  .switcher .vlabel { min-width: 170px; text-align: center; font-size: 13px; font-weight: 600; letter-spacing: 0.01em; }
+  .switcher .vlabel small { display: block; font-weight: 400; opacity: 0.7; font-size: 10.5px; }
+
+  @media (prefers-reduced-motion: no-preference) {
+    #app { animation: fade 0.18s ease; }
+    @keyframes fade { from { opacity: 0.5; } to { opacity: 1; } }
+  }
+</style>
+
+<div class="wrap">
+  <header class="page-head">
+    <div class="eyebrow">mod-playerbots · duel RL curriculum<span class="proto-tag">Prototype · 3 variants</span></div>
+    <h1>Arms Warrior vs Frost Mage</h1>
+    <p class="sub" id="subline"></p>
+  </header>
+  <main id="app"></main>
+</div>
+
+<div class="switcher" id="switcher" role="group" aria-label="Prototype variant switcher">
+  <button id="prev" aria-label="Previous variant">&#8592;</button>
+  <div class="vlabel" id="vlabel"></div>
+  <button id="next" aria-label="Next variant">&#8594;</button>
+</div>
+
+<script>
+// ============ frozen data (from docs/ml/curriculum stage cards, DEC entries) ============
+const D = {
+  stages: [
+    { id: "S0", name: "Softmax over the stock queue", epoch: 1, status: "sentinel",
+      dec: "DEC-022", tag: null, date: null, profile: "duel-s0",
+      artifact: "softmax-stock sentinel (no PBML)", data: "queue relevance logits",
+      story: "The baseline: real playerbot duel decisions with Softmax(τ) exploration over the stock scripted combat queue. τ=10 farms training data; τ=0 is the honest stock opponent every later stage must beat.",
+      metrics: [["τ farm / demo", "10 / 0"], ["role", "baseline + explorer"]] },
+    { id: "S1", name: "Learned ranker, scripted vocabulary", epoch: 1, status: "softfail",
+      dec: "DEC-025 / DEC-028", tag: null, date: "2026-07-28", profile: "duel-s1",
+      artifact: "artifacts/duel/s1/{warrior,mage}.pbml (round-2 canonical)", data: "duel_v3 + v4",
+      story: "First learned stage: a scalar scoring head re-ranks the same scripted queue. Round 2 lifted the mage (+5.2pp) but never the warrior; round 3 regressed both seats. Soft-fail, no freeze tag — pivot to S2.",
+      gate: {
+        baselineNote: "vs Softmax-stock τ=0, mixed seats, δ=0.02, ~2.4k matches/leg",
+        rows: [
+          { who: "Mage", cls: "mage", wr: 31.0, base: 25.8, delta: "+5.2pp", verdict: "pass", note: "round-2 (canonical)" },
+          { who: "Warrior", cls: "warrior", wr: 70.9, base: 74.6, delta: "−3.7pp", verdict: "fail", note: "round-2 (canonical)" },
+          { who: "Mage", cls: "mage", wr: 14.2, base: 25.8, delta: "−11.6pp", verdict: "fail", note: "round-3 (archived)", ghost: true },
+          { who: "Warrior", cls: "warrior", wr: 68.9, base: 74.6, delta: "−5.7pp", verdict: "fail", note: "round-3 (archived)", ghost: true },
+        ] },
+      metrics: [["best leg", "mage +5.2pp"], ["freeze", "none (DEC-028)"]] },
+    { id: "S2", name: "Learned ranker, full spellbook", epoch: 1, status: "softfail",
+      dec: "DEC-026 / DEC-035", tag: null, date: "2026-08-05", profile: "duel-s2",
+      artifact: "artifacts/duel/s2/{warrior,mage}.pbml (dec033r3, not freeze-cut)", data: "ml_decisions_duel_s2*",
+      story: "Atomic actions: per-spell-id logits over the whole legal class@80 spellbook (49 warrior / 220 mage ids). The win-anchored arc climbed from a 0.0%/0.1% first attempt to Arms 58.6% / Frost 24.7%, then plateaued on the 70-D statue-world features. Stacked gate FAIL — the world had to learn to move first.",
+      gate: {
+        baselineNote: "vs honest stock τ=0 (stacked gate also required beating S1) — statue world",
+        rows: [
+          { who: "Warrior", cls: "warrior", wr: 58.6, base: null, delta: "stacked FAIL", verdict: "fail", note: "dec033 round-3" },
+          { who: "Mage", cls: "mage", wr: 24.7, base: null, delta: "stacked FAIL", verdict: "fail", note: "dec033 round-3" },
+        ] },
+      metrics: [["vocab", "49 W / 220 M ids"], ["freeze", "waived (DEC-035)"]] },
+    { id: "M0", name: "Packet-executor movement substrate", epoch: 2, status: "frozen",
+      dec: "DEC-036 / DEC-038", tag: "stage/m0-packet-executor", date: "2026-08-06", profile: "duel-m0",
+      artifact: "code+conf sentinel (no PBML)", data: "duel_v5 (90-D movement state)",
+      story: "The pivot: client-authentic movement via synthesized movement packets — strafe-kiting, jump-turns, slide-along-obstacle probes. Scripted Arms-chase / Frost-kite intent movers become the DAgger teacher. Opens eval epoch 2: every WR after this line is a new world.",
+      metrics: [["throughput gate", "84.2% (waived)"], ["movement duels", "32% shorter"]] },
+    { id: "M1", name: "Learned movement-intent ranker", epoch: 2, status: "frozen",
+      dec: "DEC-039 / DEC-041", tag: "stage/m1-movement-ranker", date: "2026-08-07", profile: "duel-m1",
+      artifact: "artifacts/duel/m1/{warrior,mage}.pbml", data: "ml_movement_duel_v1",
+      story: "A 9-way foe-relative intent head replaces the scripted movement pick (abilities stay stock). The mage head out-kites its own teacher — more cast-band uptime, wider spacing, +2.3pp. No head beat the near-optimal scripted warrior chase; its certified clone ships under a parity waiver.",
+      gate: {
+        baselineNote: "vs fresh epoch-2 M0↔M0 baseline (W 39.3% / M 61.5%), movement τ=0, δ=0.02",
+        rows: [
+          { who: "Mage", cls: "mage", wr: 63.8, base: 61.5, delta: "+2.3pp", verdict: "pass", note: "r3-eo (frozen)" },
+          { who: "Warrior", cls: "warrior", wr: 40.3, base: 39.3, delta: "+1.0pp", verdict: "waiver", note: "r2-dagger clone (frozen)" },
+        ] },
+      quality: [
+        { metric: "Mage cast-band uptime (15–30y, LoS)", m0: 16.3, m1: 19.0, unit: "%", better: "up" },
+        { metric: "Mage mean foe distance", m0: 9.7, m1: 11.5, unit: "y", better: "up" },
+        { metric: "Warrior melee uptime", m0: 44.5, m1: 41.0, unit: "%", better: "up" },
+      ],
+      metrics: [["mage uplift", "+2.3pp"], ["cast-band uptime", "16.3% → 19.0%"]] },
+    { id: "M2", name: "Ability head, co-adapted", epoch: 2, status: "frozen",
+      dec: "DEC-042 / DEC-051", tag: "stage/m2-ability-coadapt", date: "2026-08-18", profile: "duel-m2",
+      artifact: "artifacts/duel/m2/{warrior,mage}.pbml (112-D duel_v6)", data: "duel_v6 (135-col CSV)",
+      story: "The S2 idea, retried where it can work: fresh spellbook heads trained on the movement-active world with frozen M1 movement driving both seats. First both-seat gate PASS of the curriculum — and the round trajectories showed the loop peaks per seat, minting the τ=0-WR-leg deploy discipline.",
+      gate: {
+        baselineNote: "vs fresh S0-sentinel+M1 baseline (W 45.9% / M 54.6%), τ=0, ≥10.7k matches/seat",
+        rows: [
+          { who: "Warrior", cls: "warrior", wr: 58.0, base: 45.9, delta: "+12.1pp", verdict: "pass", note: "r1-win (frozen)" },
+          { who: "Mage", cls: "mage", wr: 75.2, base: 54.6, delta: "+20.6pp", verdict: "pass", note: "r0-BC (frozen)" },
+        ] },
+      trajectory: {
+        rounds: ["r0-BC", "r1-win", "r2-win"],
+        warrior: [33.0, 58.0, 46.9], mage: [75.2, 49.7, 35.8],
+        frozenIdx: { warrior: 1, mage: 0 },
+        baseline: { warrior: 45.9, mage: 54.6 } },
+      showcase: [
+        { combo: "statue-era S2 heads + M1 movement", warrior: 44.6, mage: 38.8 },
+        { combo: "statue-era S2 heads + M0 scripted movement", warrior: 50.2, mage: 37.6 },
+      ],
+      metrics: [["warrior", "+12.1pp"], ["mage", "+20.6pp"]] },
+  ],
+  throughput: [
+    { label: "duel-farm control (DEC-023/024)", v: 1698, note: "pre-overhaul" },
+    { label: "M0 gate window (DEC-038)", v: 3831, note: "84.2% of control — waived" },
+    { label: "farm-cycle overhaul (DEC-038)", v: 4548, note: "new control" },
+    { label: "DEC-052 window (packets-only)", v: 12351, note: "floor was 4,321" },
+  ],
+};
+
+const REPRO = (p) => `.\\scripts\\ensure_running.ps1 -ProfileGB 32 -ServerProfile ${p} -RestartServers`;
+
+const BADGE = {
+  frozen: '<span class="badge frozen">frozen</span>',
+  softfail: '<span class="badge softfail">soft-fail</span>',
+  waiver: '<span class="badge waiver">waiver</span>',
+  sentinel: '<span class="badge sentinel">sentinel</span>',
+};
+
+const EPOCH_NOTE = "Epoch 1 (statue world) and epoch 2 (movement world) winrates are not comparable; every gate is read against its own fresh baseline, marked | on each bar.";
+
+// ============ shared chart pieces ============
+function deltaClass(v) { return v.verdict === "pass" ? "up" : v.verdict === "waiver" ? "flat" : "down"; }
+function verdictBadge(v) {
+  return v === "pass" ? '<span class="delta up">PASS</span>'
+       : v === "waiver" ? '<span class="delta flat">WAIVER</span>'
+       : '<span class="delta down">FAIL</span>';
+}
+function gateBars(gate, opts = {}) {
+  const rows = gate.rows.filter(r => !r.ghost || opts.ghosts).map(r => `
+    <div class="gbar" title="${r.who} ${r.wr}%${r.base != null ? ` vs baseline ${r.base}%` : ""} (${r.note})">
+      <div class="who"><b>${r.who}</b><br><span style="font-size:11px;color:var(--muted)">${r.note}</span></div>
+      <div class="track">
+        <div class="fill ${r.cls}${r.ghost ? " ghost" : ""}" style="width:${r.wr}%"></div>
+        ${r.base != null ? `<div class="base" style="left:${r.base}%" title="baseline ${r.base}%"></div>` : ""}
+      </div>
+      <div class="num"><b>${r.wr}%</b> <span class="delta ${deltaClass(r)}">${r.delta}</span></div>
+    </div>`).join("");
+  return rows + `<div class="axisnote">${gate.baselineNote}</div>`;
+}
+function legend() {
+  return `<div class="legend" style="margin-bottom:10px">
+    <span><span class="swatch warrior"></span>Arms Warrior</span>
+    <span><span class="swatch mage"></span>Frost Mage</span>
+    <span><span class="swatch baseline"></span>fresh baseline for that gate</span>
+  </div>`;
+}
+
+function trajectoryChart(t) {
+  const W = 460, H = 190, L = 42, R = 14, T = 16, B = 30;
+  const xs = i => L + i * ((W - L - R) / (t.rounds.length - 1));
+  const ys = v => T + (100 - v) * ((H - T - B) / 100);
+  const line = (arr, color, frozenIdx, name) => {
+    const pts = arr.map((v, i) => `${xs(i)},${ys(v)}`).join(" ");
+    const dots = arr.map((v, i) => {
+      const frozen = i === frozenIdx;
+      return `<circle cx="${xs(i)}" cy="${ys(v)}" r="${frozen ? 6 : 4}" fill="${color}"
+        ${frozen ? 'stroke="var(--surface)" stroke-width="2"' : ""}><title>${name} ${t.rounds[i]}: ${v}%</title></circle>
+        <text x="${xs(i)}" y="${ys(v) - 10}" text-anchor="middle" class="sv-val">${v}</text>`;
+    }).join("");
+    return `<polyline points="${pts}" fill="none" stroke="${color}" stroke-width="2"/>` + dots;
+  };
+  const baseLine = (v, color) =>
+    `<line x1="${L}" x2="${W - R}" y1="${ys(v)}" y2="${ys(v)}" stroke="${color}" stroke-width="1" stroke-dasharray="3 4" opacity="0.6"/>`;
+  const gridLines = [0, 25, 50, 75, 100].map(v =>
+    `<line class="sv-grid" x1="${L}" x2="${W - R}" y1="${ys(v)}" y2="${ys(v)}"/>
+     <text class="sv-axis" x="${L - 6}" y="${ys(v) + 3}" text-anchor="end">${v}</text>`).join("");
+  const xlabs = t.rounds.map((r, i) =>
+    `<text class="sv-lab" x="${xs(i)}" y="${H - 8}" text-anchor="middle">${r}</text>`).join("");
+  return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="M2 round trajectory winrates" style="width:100%;height:auto">
+    ${gridLines}${xlabs}
+    ${baseLine(t.baseline.warrior, "var(--warrior)")}${baseLine(t.baseline.mage, "var(--mage)")}
+    ${line(t.warrior, "var(--warrior)", t.frozenIdx.warrior, "Warrior")}
+    ${line(t.mage, "var(--mage)", t.frozenIdx.mage, "Mage")}
+  </svg>`;
+}
+
+function throughputChart() {
+  const max = 13000;
+  return D.throughput.map(r => `
+    <div class="gbar" title="${r.label}: ${r.v.toLocaleString()} duels/h">
+      <div class="who" style="font-size:12px">${r.label}</div>
+      <div class="track"><div class="fill" style="width:${(r.v / max) * 100}%;background:var(--baseline)"></div></div>
+      <div class="num"><b>${r.v.toLocaleString()}</b><span style="color:var(--muted);font-size:11px">${r.note}</span></div>
+    </div>`).join("") + `<div class="axisnote">duels per hour, measured farm windows (run-to-run variance is large; see map fog note)</div>`;
+}
+
+function dumbbells(quality) {
+  return quality.map(q => {
+    const max = Math.max(q.m0, q.m1) * 1.25;
+    const x0 = (q.m0 / max) * 100, x1 = (q.m1 / max) * 100;
+    const gained = (q.m1 > q.m0) === (q.better === "up");
+    return `<div class="gbar" title="${q.metric}: M0 ${q.m0}${q.unit} → M1 ${q.m1}${q.unit}">
+      <div class="who" style="font-size:12px">${q.metric}</div>
+      <div class="track" style="background:none">
+        <div style="position:absolute;top:6px;height:2px;background:var(--baseline);left:${Math.min(x0, x1)}%;width:${Math.abs(x1 - x0)}%"></div>
+        <div style="position:absolute;top:2px;width:10px;height:10px;border-radius:50%;background:var(--muted);left:calc(${x0}% - 5px)"></div>
+        <div style="position:absolute;top:2px;width:10px;height:10px;border-radius:50%;background:var(--mage);left:calc(${x1}% - 5px)"></div>
+      </div>
+      <div class="num"><b>${q.m0} → ${q.m1}${q.unit}</b><span class="delta ${gained ? "up" : "down"}">${gained ? "↑" : "↓"}</span></div>
+    </div>`;
+  }).join("") + `<div class="axisnote"><span style="color:var(--muted)">●</span> M0 scripted teacher &nbsp;→&nbsp; <span style="color:var(--mage)">●</span> M1 learned head (gate runs, argmax)</div>`;
+}
+
+// ============ Variant A: Campaign (narrative timeline) ============
+function renderA() {
+  const chapters = D.stages.map((s, i) => {
+    const epochBreak = s.id === "M0"
+      ? `<div class="epoch"><b>Eval epoch 2 opens.</b> ${EPOCH_NOTE}</div>` : "";
+    const gate = s.gate ? `<div class="card panel">${legend()}${gateBars(s.gate)}</div>` : "";
+    const traj = s.trajectory ? `<div class="card panel"><b style="font-size:13px">Round trajectory (τ=0 WR legs, backfilled)</b>
+      ${trajectoryChart(s.trajectory)}
+      <div class="axisnote">big dot = frozen head; dashed line = that seat's fresh baseline. The loop peaked at warrior r1 / mage r0; round 2 regressed both seats undetected by offline gates.</div></div>` : "";
+    const hero = s.id === "M2" ? `<div class="hero-line">
+        <div class="kn"><b style="color:var(--warrior)">+12.1pp</b><span>Warrior vs fresh baseline</span></div>
+        <div class="kn"><b style="color:var(--mage)">+20.6pp</b><span>Mage vs fresh baseline</span></div>
+        <div class="kn"><b>1st</b><span>both-seat gate PASS</span></div>
+      </div>` : "";
+    return epochBreak + `
+      <section class="chapter">
+        <div class="rail"></div><div class="dot ${s.status === "waiver" ? "frozen" : s.status}"></div>
+        <h3><span class="eyebrow" style="letter-spacing:0.08em">${s.id}</span> ${s.name} ${BADGE[s.status]}</h3>
+        <div class="story">${s.story}</div>
+        ${hero}${gate}${traj}
+        <div class="axisnote" style="margin-bottom:18px">${s.dec}${s.tag ? ` · <code>${s.tag}</code>` : ""}${s.date ? ` · ${s.date}` : ""} · replay <code>-ServerProfile ${s.profile}</code></div>
+      </section>`;
+  }).join("");
+  return `<div class="vA">${chapters}</div>`;
+}
+
+// ============ Variant B: Scoreboard (numbers-first) ============
+function renderB() {
+  const m2 = D.stages.find(s => s.id === "M2"), m1 = D.stages.find(s => s.id === "M1");
+  const kpis = `<div class="kpis">
+    <div class="card kpi"><b style="color:var(--warrior)">58.0%</b><div class="lab">Warrior WR at M2 freeze</div><div class="ctx"><span class="delta up">+12.1pp</span> vs fresh S0+M1 baseline (45.9%)</div></div>
+    <div class="card kpi"><b style="color:var(--mage)">75.2%</b><div class="lab">Mage WR at M2 freeze</div><div class="ctx"><span class="delta up">+20.6pp</span> vs fresh S0+M1 baseline (54.6%)</div></div>
+    <div class="card kpi"><b>3 / 6</b><div class="lab">stages frozen</div><div class="ctx">M0 · M1 · M2; S1/S2 soft-fail, S0 sentinel</div></div>
+    <div class="card kpi"><b>12,351</b><div class="lab">peak duels/hour</div><div class="ctx">DEC-052 window, packets-only wire</div></div>
+  </div>`;
+  const gates = D.stages.filter(s => s.gate).map(s => `
+    <div style="margin-bottom:16px">
+      <div style="display:flex;gap:10px;align-items:center;margin-bottom:2px"><b>${s.id}</b> ${BADGE[s.status]} <span style="font-size:11.5px;color:var(--muted)">${s.dec}</span></div>
+      ${gateBars(s.gate)}
+    </div>`).join("");
+  const showcase = `<table>
+    <tr><th>combo (report-only, DEC-042)</th><th>Warrior</th><th>Mage</th></tr>
+    <tr><td>frozen M2 heads + M1 movement</td><td><b>58.0%</b> <span class="delta up">PASS</span></td><td><b>75.2%</b> <span class="delta up">PASS</span></td></tr>
+    ${m2.showcase.map(r => `<tr><td>${r.combo}</td><td>${r.warrior}%</td><td>${r.mage}%</td></tr>`).join("")}
+  </table><div class="chart-note">statue-era heads sit at stock-or-worse on the movement-active world; the M2 pair beats them by 8–37pp</div>`;
+  return `<div class="vB">
+    ${kpis}
+    <div class="card" style="margin-bottom:14px"><h3>Freeze gates — winrate vs each gate's fresh baseline</h3>${legend()}${gates}
+      <div class="axisnote">${EPOCH_NOTE}</div></div>
+    <div class="grid2">
+      <div class="card"><h3>M2 round trajectory (τ=0 legs)</h3>${trajectoryChart(m2.trajectory)}
+        <div class="chart-note">big dot = frozen head; dashed = seat baseline. Round 2 regressed both seats — origin of the per-deploy τ=0 WR-leg rule (DEC-051).</div></div>
+      <div class="card"><h3>M1 movement quality (gate runs)</h3>${dumbbells(m1.quality)}
+        <div class="chart-note">the mage head's +2.3pp is corroborated by range control: more cast-band, wider spacing than its teacher</div></div>
+    </div>
+    <div class="grid2">
+      <div class="card"><h3>Farm throughput history</h3>${throughputChart()}</div>
+      <div class="card"><h3>Cross-era check</h3>${showcase}</div>
+    </div>
+  </div>`;
+}
+
+// ============ Variant C: Ledger (reproducibility-first) ============
+function renderC() {
+  const cards = D.stages.map(s => {
+    const dl = `<dl>
+      <dt>git tag</dt><dd>${s.tag ? `<code>${s.tag}</code>` : "<span style='color:var(--muted)'>none " + (s.status === "softfail" ? "(soft-fail)" : "(sentinel)") + "</span>"}</dd>
+      <dt>policy</dt><dd>${s.artifact}</dd>
+      <dt>data tag</dt><dd><code>${s.data}</code></dd>
+      <dt>decisions</dt><dd>${s.dec}</dd>
+      ${s.date ? `<dt>closed</dt><dd>${s.date}</dd>` : ""}
+    </dl>`;
+    const strip = `<div class="mstrip">${s.metrics.map(m => `<div class="m"><b>${m[1]}</b><span>${m[0]}</span></div>`).join("")}</div>`;
+    return `<div class="card stage-card">
+      <h3><span><span class="eyebrow" style="letter-spacing:0.08em">${s.id}</span> &nbsp;${s.name}</span>${BADGE[s.status]}</h3>
+      <div class="tagline">epoch ${s.epoch}${s.epoch === 1 ? " (statue world)" : " (movement world)"}</div>
+      ${dl}
+      <div class="repro">${REPRO(s.profile)}</div>
+      ${strip}
+    </div>`;
+  }).join("");
+  return `<div class="vC">
+    <div class="card" style="margin-top:18px">
+      <b>Freeze contract (DEC-019).</b> <span style="color:var(--ink-2)">Every stage row below reproduces from frozen artifacts only: a policy artifact (or sentinel), a replay conf profile, a data/CSV tag, a stage card, and a git tag. Winrates are quoted from that stage's own gate run against its own fresh baseline — ${EPOCH_NOTE.toLowerCase()}</span>
+    </div>
+    <div class="cards">${cards}</div>
+    <div class="card" style="margin-top:16px"><b style="font-size:14px">Binary provenance</b>
+      <div style="font-size:13px;color:var(--ink-2);margin-top:6px">
+        Module: tags on <code>exp/duel-rl-curriculum</code> (gamesh411/mod-playerbots). Core: AzerothCore Playerbot branch, <code>97c36e46b</code> (DEC-047 ROOT-flag fix) · <code>a29b3e10e</code> (DEC-052 packets-only). PBML weights via GitHub Release + sha256 per manifest (<code>artifacts/duel/s{N}/manifest.json</code>).
+      </div></div>
+  </div>`;
+}
+
+// ============ switcher ============
+const VARIANTS = [
+  { key: "A", name: "Campaign", sub: "the story, stage by stage", render: renderA,
+    subline: "Six stages from scripted baseline to a both-seat win: what each stage tried, what the gate said, and where the plan bent." },
+  { key: "B", name: "Scoreboard", sub: "numbers first", render: renderB,
+    subline: "Gate results, trajectories, and farm throughput for the S0→S2 / M0→M2 duel curriculum — every number from a frozen gate run." },
+  { key: "C", name: "Ledger", sub: "reproduce any stage", render: renderC,
+    subline: "The freeze-contract view: per-stage artifacts, tags, and one-line replay commands. If it is on this page, you can run it." },
+];
+let cur = Math.max(0, VARIANTS.findIndex(v => v.key === new URLSearchParams(location.search).get("variant")));
+function render() {
+  const v = VARIANTS[cur];
+  document.getElementById("app").innerHTML = v.render();
+  document.getElementById("subline").textContent = v.subline;
+  document.getElementById("vlabel").innerHTML = `${v.key} — ${v.name}<small>${v.sub}</small>`;
+  try { history.replaceState(null, "", "?variant=" + v.key); } catch (e) {}
+}
+function step(d) { cur = (cur + d + VARIANTS.length) % VARIANTS.length; render(); window.scrollTo({ top: 0 }); }
+document.getElementById("prev").addEventListener("click", () => step(-1));
+document.getElementById("next").addEventListener("click", () => step(1));
+document.addEventListener("keydown", e => {
+  if (/^(INPUT|TEXTAREA)$/.test(document.activeElement.tagName) || document.activeElement.isContentEditable) return;
+  if (e.key === "ArrowLeft") step(-1);
+  if (e.key === "ArrowRight") step(1);
+});
+render();
+</script>
